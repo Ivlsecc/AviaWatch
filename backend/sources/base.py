@@ -155,6 +155,8 @@ class Source(ABC):
     supports_calendar: ClassVar[bool] = False
     # Таймаут по умолчанию для нового конфига источника (дальше меняется в админке)
     default_timeout_s: ClassVar[float] = 20.0
+    # Прокси по умолчанию: None — глобальный из .env, "direct" — всегда напрямую, мимо системного прокси
+    default_proxy: ClassVar[str | None] = None
 
     @abstractmethod
     async def search(self, query: SearchQuery, ctx: SourceContext) -> list[FlightOffer]:

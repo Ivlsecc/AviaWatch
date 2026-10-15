@@ -17,6 +17,8 @@ from sources.base import FlightOffer, SearchQuery, Source, SourceContext
 
 log = logging.getLogger(__name__)
 
+DIRECT = "direct"
+
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/130.0 Safari/537.36"
@@ -49,9 +51,12 @@ class SourceRunner:
         self._last_call: dict[str, float] = {}
 
     def client(self, proxy: str | None) -> httpx.AsyncClient:
+        """proxy: None — системные настройки, "direct" — напрямую мимо системного прокси, иначе URL прокси."""
         if proxy not in self._clients:
+            direct = proxy == DIRECT
             self._clients[proxy] = httpx.AsyncClient(
-                proxy=proxy or None,
+                proxy=None if direct or not proxy else proxy,
+                trust_env=not direct,
                 headers={"User-Agent": USER_AGENT, "Accept-Language": "ru-RU,ru;q=0.9"},
                 follow_redirects=True,
             )

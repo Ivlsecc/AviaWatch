@@ -61,7 +61,7 @@ async def main() -> int:
     runner = SourceRunner()
     try:
         res = await runner.run(
-            source, query, RunSettings(retries=0, proxy=args.proxy or settings.http_proxy or None, params=params)
+            source, query, RunSettings(retries=0, proxy=args.proxy or source.default_proxy or settings.http_proxy or None, params=params)
         )
     finally:
         await runner.close()

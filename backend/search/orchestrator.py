@@ -65,7 +65,7 @@ async def sync_source_configs() -> None:
             if name in existing:
                 continue
             params = {"market": "ru"} if name == "aviasales_api" else {}
-            s.add(SourceConfig(name=name, params=params, timeout_s=cls.default_timeout_s))
+            s.add(SourceConfig(name=name, params=params, timeout_s=cls.default_timeout_s, proxy=cls.default_proxy))
             log.info("Добавлен конфиг источника %s (%s)", name, cls.title)
 
 
