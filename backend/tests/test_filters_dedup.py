@@ -71,6 +71,16 @@ def test_merge_takes_details_from_richest_source():
     assert apply_filters([m], FilterSettings()) == []
 
 
+def test_merge_ignores_wrong_timezone_offset():
+    from datetime import timedelta as td
+
+    local = datetime(2026, 10, 21, 17, 15)
+    right = offer(27738, source="kupibilet", flights=["UJ707"], dep=local.replace(tzinfo=timezone(td(hours=3))))
+    wrong = offer(28644, source="aviasales_api", flights=["UJ707"], dep=local.replace(tzinfo=timezone(td(hours=2))))
+    [m] = merge_duplicates([right, wrong])
+    assert m.price_rub == 27738 and m.alt_links[0][0] == "aviasales_api"
+
+
 def test_merge_normalizes_flight_number_dashes():
     a = offer(14355, source="aviasales_api", flights=["UJ707"])
     b = offer(14306, source="tutu", flights=["UJ–707"])

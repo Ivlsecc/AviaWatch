@@ -97,7 +97,9 @@ class FlightOffer(BaseModel):
         отдают номер лишь первого сегмента. Вылет минута-в-минуту + первый рейс +
         аэропорт прилёта + число пересадок практически однозначно задают перелёт.
         """
-        dep = self.departure_at.astimezone(timezone.utc).strftime("%Y%m%d%H%M")
+        # Местное время по часам, а не UTC: источники сходятся в «17:15», но ошибаются в поясе
+        # (Aviasales API даёт Египту +02 летом, Купибилет — верное +03)
+        dep = self.departure_at.strftime("%Y%m%d%H%M")
         if self.legs_links:
             # Составной маршрут никогда не склеиваем с обычным билетом: иначе он «унаследует» его условия
             return ("combo", dep, tuple(self.flight_numbers))
