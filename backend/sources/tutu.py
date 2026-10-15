@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from datetime import date, datetime
 from typing import Any
@@ -168,8 +169,9 @@ def parse_offers(chunks: list) -> list[FlightOffer]:
                 destination=airport(s["arrivalGeoPointId"]),
                 departure_at=datetime.fromisoformat(s["departureDateTime"]),
                 arrival_at=datetime.fromisoformat(s["arrivalDateTime"]),
-                airline=s["voyageNumber"].split("-")[0],
-                flight_number=s["voyageNumber"].replace("-", ""),
+                # Номер рейса бывает и «PC-388», и «UJ–707» (длинное тире)
+                airline=re.split(r"[-–—\s]", s["voyageNumber"])[0],
+                flight_number=re.sub(r"[-–—\s]", "", s["voyageNumber"]),
             )
             for s in raw_segments
         ]

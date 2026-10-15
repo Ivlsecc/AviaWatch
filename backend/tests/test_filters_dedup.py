@@ -71,6 +71,12 @@ def test_merge_takes_details_from_richest_source():
     assert apply_filters([m], FilterSettings()) == []
 
 
+def test_merge_normalizes_flight_number_dashes():
+    a = offer(14355, source="aviasales_api", flights=["UJ707"])
+    b = offer(14306, source="tutu", flights=["UJ–707"])
+    assert len(merge_duplicates([a, b])) == 1
+
+
 def test_merge_keeps_cheapest_and_alt_links():
     a = offer(20000, source="aviasales", flights=["SU1840"])
     b = offer(19000, source="tbank", flights=["SU 1840"])

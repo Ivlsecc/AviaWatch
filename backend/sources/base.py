@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -59,6 +60,8 @@ class FlightOffer(BaseModel):
     origin_airport: str
     destination_airport: str
     departure_at: datetime
+    # False — источник знает только дату (например, чартеры из Telegram)
+    time_known: bool = True
     arrival_at: datetime | None = None
     duration_min: int | None = None
     transfers: int = 0
@@ -75,6 +78,8 @@ class FlightOffer(BaseModel):
     baggage_included: bool | None = None
     self_transfer: bool | None = None
     link: str
+    # Пояснение для пользователя: условия чартера, багаж, сколько осталось мест
+    note: str | None = None
     # Другие источники, где найден тот же рейс (заполняется при склейке дублей)
     alt_links: list[tuple[str, int, str]] = Field(default_factory=list)
     collected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -91,7 +96,7 @@ class FlightOffer(BaseModel):
         аэропорт прилёта + число пересадок практически однозначно задают перелёт.
         """
         dep = self.departure_at.astimezone(timezone.utc).strftime("%Y%m%d%H%M")
-        first = self.flight_numbers[0].replace(" ", "").replace("-", "").upper() if self.flight_numbers else None
+        first = re.sub(r"[\s\-–—]", "", self.flight_numbers[0]).upper() if self.flight_numbers else None
         if first:
             return (dep, first, self.destination_airport, self.transfers)
         return (dep, self.origin_airport, self.destination_airport, tuple(self.airlines), self.transfers)

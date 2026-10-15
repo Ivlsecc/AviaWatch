@@ -84,11 +84,14 @@ def offer_line(i: int, o: FlightOffer) -> str:
     details = " · ".join(x for x in (transfers_label(o), duration(o.duration_min), flights) if x)
     links = [f'<a href="{escape(o.link, quote=True)}">{escape(source_title(o.source))}</a>']
     links += [f'<a href="{escape(link, quote=True)}">{escape(source_title(src))} {rub(p)}</a>' for src, p, link in o.alt_links]
-    return (
-        f"{i}. <b>{rub(o.price_rub)}</b> · {o.departure_at:%d.%m %H:%M} · {o.origin_airport}→{o.destination_airport}\n"
+    when = f"{o.departure_at:%d.%m %H:%M}" if o.time_known else f"{o.departure_at:%d.%m}, время уточнять"
+    text = (
+        f"{i}. <b>{rub(o.price_rub)}</b> · {when} · {o.origin_airport}→{o.destination_airport}\n"
         f"    {details}\n"
-        f"    🛒 {' · '.join(links)}"
     )
+    if o.note:
+        text += f"    ℹ️ {escape(o.note)}\n"
+    return text + f"    🛒 {' · '.join(links)}"
 
 
 def stats_block(stats: PriceStats | None, pax: int) -> str:

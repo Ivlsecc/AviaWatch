@@ -75,8 +75,9 @@ async def main() -> int:
     print(f"[{source.name}] {len(res.offers)} предложений, после фильтров {len(offers)}, за {res.elapsed_s:.1f}с\n")
     for o in offers[: args.limit]:
         dur = f"{o.duration_min // 60}ч{o.duration_min % 60:02d}" if o.duration_min else "—"
+        when = f"{o.departure_at:%d.%m %H:%M}" if o.time_known else f"{o.departure_at:%d.%m} --:--"
         print(
-            f"{o.price_rub:>8} ₽  {o.departure_at:%d.%m %H:%M}  {o.origin_airport}→{o.destination_airport}  "
+            f"{o.price_rub:>8} ₽  {when}  {o.origin_airport}→{o.destination_airport}  "
             f"пересадок {o.transfers}  {dur:>6}  {','.join(o.flight_numbers) or ','.join(o.airlines)}"
         )
         print(f"           {o.link}")
