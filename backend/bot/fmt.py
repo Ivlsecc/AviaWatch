@@ -1,0 +1,168 @@
+"""Форматирование сообщений бота (HTML)."""
+
+from __future__ import annotations
+
+from datetime import date
+from html import escape
+
+from search.analytics import PriceStats
+from search.filters import FilterSettings
+from search.orchestrator import SearchResult
+from search.routes import RouteRequest
+from sources.base import FlightOffer
+from sources.registry import all_sources
+
+PAGE_SIZE = 5
+MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа",
+              "сентября", "октября", "ноября", "декабря"]
+
+
+def rub(n: int | float | None) -> str:
+    if n is None:
+        return "—"
+    return f"{int(n):,}".replace(",", " ") + " ₽"
+
+
+def d(day: date) -> str:
+    return day.strftime("%d.%m")
+
+
+def dates_label(a: date, b: date) -> str:
+    if a == b:
+        return f"{a.day} {MONTHS_GEN[a.month - 1]}"
+    return f"{d(a)} – {d(b)}"
+
+
+def plural(n: int, one: str, few: str, many: str) -> str:
+    n10, n100 = n % 10, n % 100
+    if n10 == 1 and n100 != 11:
+        return one
+    if 2 <= n10 <= 4 and not 12 <= n100 <= 14:
+        return few
+    return many
+
+
+def pax_label(adults: int, children: int, infants: int) -> str:
+    parts = [f"{adults} взр."]
+    if children:
+        parts.append(f"{children} реб.")
+    if infants:
+        parts.append(f"{infants} млад.")
+    return ", ".join(parts)
+
+
+def route_title(req: RouteRequest) -> str:
+    o = " / ".join(req.origin_names or req.origins)
+    t = " / ".join(req.destination_names or req.destinations)
+    return f"{escape(o)} → {escape(t)}"
+
+
+def duration(minutes: int | None) -> str:
+    if not minutes:
+        return ""
+    h, m = divmod(minutes, 60)
+    return f"{h} ч {m:02d} мин" if m else f"{h} ч"
+
+
+def source_title(name: str) -> str:
+    cls = all_sources().get(name)
+    return cls.title if cls else name
+
+
+def transfers_label(o: FlightOffer) -> str:
+    if o.transfers == 0:
+        return "прямой"
+    via = o.route_airports[1:-1]
+    word = plural(o.transfers, "пересадка", "пересадки", "пересадок")
+    return f"{o.transfers} {word}" + (f" ({', '.join(via)})" if via else "")
+
+
+def offer_line(i: int, o: FlightOffer) -> str:
+    flights = ", ".join(o.flight_numbers) or ", ".join(o.airlines)
+    details = " · ".join(x for x in (transfers_label(o), duration(o.duration_min), flights) if x)
+    links = [f'<a href="{escape(o.link, quote=True)}">{escape(source_title(o.source))}</a>']
+    links += [f'<a href="{escape(link, quote=True)}">{escape(source_title(src))} {rub(p)}</a>' for src, p, link in o.alt_links]
+    return (
+        f"{i}. <b>{rub(o.price_rub)}</b> · {o.departure_at:%d.%m %H:%M} · {o.origin_airport}→{o.destination_airport}\n"
+        f"    {details}\n"
+        f"    🛒 {' · '.join(links)}"
+    )
+
+
+def stats_block(stats: PriceStats | None, pax: int) -> str:
+    if stats is None or stats.mean is None:
+        return "📊 Средняя цена: пока недостаточно данных"
+    text = (
+        f"📊 Средняя цена за 1 пассажира: <b>{rub(stats.mean)}</b> (медиана {rub(stats.median)})\n"
+        f"    вылеты {d(stats.window_from)}–{d(stats.window_to)}, {stats.days} "
+        f"{plural(stats.days, 'день', 'дня', 'дней')} с ценами"
+    )
+    if pax > 1:
+        text += f"\n    на {pax} пасс.: ≈ {rub(stats.mean * pax)}"
+    if not stats.has_history:
+        text += "\n    <i>История за прошлые дни ещё копится — пока только будущие даты</i>"
+    return text
+
+
+def results_text(req: RouteRequest, result: SearchResult, stats: PriceStats | None, page: int) -> str:
+    head = (
+        f"<b>{route_title(req)}</b>\n"
+        f"📅 {dates_label(req.date_from, req.date_to)} · 👤 {pax_label(req.adults, req.children, req.infants)}"
+        + (" · только прямые" if req.direct_only else "")
+    )
+    parts = [head, stats_block(stats, req.passengers)]
+
+    offers = result.offers
+    if not offers:
+        parts.append("😕 Подходящих рейсов не нашлось. Попробуйте расширить даты или ослабить фильтры.")
+    else:
+        start = page * PAGE_SIZE
+        chunk = offers[start : start + PAGE_SIZE]
+        parts.append("\n\n".join(offer_line(start + i + 1, o) for i, o in enumerate(chunk)))
+        cheapest = offers[0].price_rub
+        if stats and stats.mean:
+            per_pax = cheapest / max(req.passengers, 1)
+            diff = (per_pax - stats.mean) / stats.mean * 100
+            sign = "ниже" if diff < 0 else "выше"
+            parts.append(f"💡 Лучшая цена на {abs(diff):.0f}% {sign} средней")
+        parts.append(f"<i>Показано {start + 1}–{start + len(chunk)} из {len(offers)}</i>")
+
+    parts.append(sources_line(result))
+    return "\n\n".join(parts)
+
+
+def sources_line(result: SearchResult) -> str:
+    items = []
+    for st in result.statuses:
+        mark = "✅" if st.ok else ("⏸" if st.skipped else "⚠️")
+        items.append(f"{mark} {escape(source_title(st.source))}")
+    suffix = " · из кэша" if result.from_cache else ""
+    return "<i>Источники: " + (", ".join(items) or "нет активных") + suffix + "</i>"
+
+
+def filters_text(f: FilterSettings) -> str:
+    return "\n".join(
+        [
+            "⚙️ <b>Фильтры маршрутов</b>",
+            "Отсекают неудобные варианты: много пересадок, огромные стыковки, смену аэропорта.",
+            "",
+            f"• Пересадок не больше: <b>{f.max_transfers}</b>",
+            f"• Время в пути: <b>{duration_factor_label(f)}</b>",
+            f"• Стыковка: <b>{layover_label(f)}</b>",
+            f"• Смена аэропорта при стыковке: <b>{'исключать' if f.exclude_airport_change else 'разрешить'}</b>",
+            f"• Самостоятельная пересадка: <b>{'исключать' if f.exclude_self_transfer else 'разрешить'}</b>",
+            f"• Ночные стыковки: <b>{'исключать' if f.exclude_night_layovers else 'разрешить'}</b>",
+        ]
+    )
+
+
+def duration_factor_label(f: FilterSettings) -> str:
+    if not f.max_duration_factor:
+        return "без ограничений"
+    return f"не дольше ×{f.max_duration_factor:g} от самого быстрого"
+
+
+def layover_label(f: FilterSettings) -> str:
+    if f.min_layover_min <= 0 and f.max_layover_min >= 24 * 60:
+        return "любая"
+    return f"{f.min_layover_min / 60:g}–{f.max_layover_min / 60:g} ч"

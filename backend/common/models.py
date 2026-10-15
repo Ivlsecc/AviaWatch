@@ -34,16 +34,17 @@ class Subscription(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
 
-    # Маршрут
-    origin: Mapped[str] = mapped_column(String(8))
-    destination: Mapped[str] = mapped_column(String(8))
-    origin_name: Mapped[str] = mapped_column(String(128), default="")
-    destination_name: Mapped[str] = mapped_column(String(128), default="")
+    # Маршрут. Несколько городов — через запятую: "HRG,SSH"
+    origin: Mapped[str] = mapped_column(String(64))
+    destination: Mapped[str] = mapped_column(String(64))
+    origin_name: Mapped[str] = mapped_column(String(256), default="")
+    destination_name: Mapped[str] = mapped_column(String(256), default="")
     date_from: Mapped[date] = mapped_column(Date)
     date_to: Mapped[date] = mapped_column(Date)
     adults: Mapped[int] = mapped_column(Integer, default=1)
     children: Mapped[int] = mapped_column(Integer, default=0)
     infants: Mapped[int] = mapped_column(Integer, default=0)
+    direct_only: Mapped[bool] = mapped_column(Boolean, default=False)
     filters: Mapped[dict] = mapped_column(JSON, default=dict)
 
     # Уведомления
@@ -62,6 +63,14 @@ class Subscription(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     user: Mapped[User] = relationship(back_populates="subscriptions")
+
+    @property
+    def origins(self) -> list[str]:
+        return [c for c in self.origin.split(",") if c]
+
+    @property
+    def destinations(self) -> list[str]:
+        return [c for c in self.destination.split(",") if c]
 
 
 class SourceConfig(Base):

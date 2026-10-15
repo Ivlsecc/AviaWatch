@@ -9,7 +9,7 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from sqlalchemy import select
 
@@ -21,10 +21,12 @@ from search.cache import Cache, dumps, make_cache
 from search.dedup import merge_duplicates
 from search.filters import FilterSettings, apply_filters
 from search.runner import RunSettings, SourceRunner, SourceRunResult
-from sources.base import FlightOffer, SearchQuery
+from sources.base import FlightOffer, SearchQuery, SourceContext
 from sources.registry import all_sources, get_source
 
 log = logging.getLogger(__name__)
+
+CALENDAR_TTL_S = 3 * 3600
 
 # Колбэк «источник отключён»: (имя, ошибка) — для алерта админу
 SourceDownHook = Callable[[str, str], Awaitable[None]]
@@ -147,6 +149,49 @@ class SearchService:
             offers += r.offers
             statuses.append(SourceStatus(r.source, r.ok, len(r.offers), r.error))
         return offers, statuses
+
+    async def calendar(self, origin: str, destination: str, date_from: date, date_to: date) -> dict[date, int]:
+        """Минимальная цена за 1 взрослого по дням вылета из всех календарных источников."""
+        key = f"cal:{origin}:{destination}:{date_from}:{date_to}"
+        if cached := await self.cache.get(key):
+            return {date.fromisoformat(k): v for k, v in json.loads(cached).items()}
+
+        async with session_scope() as s:
+            configs = (await s.scalars(select(SourceConfig).where(SourceConfig.enabled.is_(True)))).all()
+        registered = all_sources()
+        now = datetime.now(timezone.utc)
+
+        async def one(cfg: SourceConfig) -> dict[date, int]:
+            rs = self._run_settings(cfg)
+            ctx = SourceContext(http=self.runner.client(rs.proxy), params=rs.params or {}, timeout_s=rs.timeout_s)
+            try:
+                return await asyncio.wait_for(
+                    get_source(cfg.name).calendar(origin, destination, date_from, date_to, ctx), rs.timeout_s * 2
+                )
+            except Exception as e:  # noqa: BLE001
+                log.warning("calendar %s failed: %s", cfg.name, e)
+                return {}
+
+        eligible = [
+            c for c in configs
+            if c.name in registered and registered[c.name].supports_calendar
+            and not ((until := as_utc(c.disabled_until)) and until > now)
+        ]
+        merged: dict[date, int] = {}
+        for part in await asyncio.gather(*(one(c) for c in eligible)):
+            for d, p in part.items():
+                if d not in merged or p < merged[d]:
+                    merged[d] = p
+
+        await self.cache.set(key, dumps({d.isoformat(): p for d, p in merged.items()}), CALENDAR_TTL_S)
+        if merged:
+            async with session_scope() as s:
+                s.add_all(
+                    PriceSnapshot(origin=origin, destination=destination, departure_date=d, source="calendar",
+                                  price_rub=p, kind="calendar", collected_at=now)
+                    for d, p in merged.items()
+                )
+        return merged
 
     def _run_settings(self, cfg: SourceConfig) -> RunSettings:
         params = dict(cfg.params or {})

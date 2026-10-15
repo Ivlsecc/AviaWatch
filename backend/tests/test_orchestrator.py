@@ -48,7 +48,7 @@ async def _setup():
     await sync_source_configs()
     async with session_scope() as s:
         for cfg in (await s.scalars(select(SourceConfig))).all():
-            cfg.enabled = cfg.name.startswith("fake_")
+            cfg.enabled = cfg.name in ("fake_ok", "fake_broken")
             cfg.retries = 0
             cfg.rate_limit_per_min = 0
 

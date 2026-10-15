@@ -20,11 +20,16 @@ class Settings(BaseSettings):
 
     # Глобальный прокси (переопределяется в конфиге конкретного источника)
     http_proxy: str = ""
+    # Прокси до api.telegram.org. Пусто — берётся системный (VPN-клиент), если он есть
+    telegram_proxy: str = ""
 
     # Поиск
     search_cache_ttl_s: int = 15 * 60
     source_failure_threshold: int = 5
     source_cooldown_min: int = 30
+
+    # Подписки: как часто перепроверять цены (минуты)
+    subscription_check_minutes: int = 60
 
     # Метрики Prometheus (0 — не поднимать HTTP-сервер)
     metrics_port: int = 0
