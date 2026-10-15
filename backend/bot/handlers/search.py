@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 
 from bot import keyboards as kb
 from bot import texts
-from bot.callbacks import Cal, Flt, Menu, Pax, PlacePick, Res, Wiz
+from bot.callbacks import Cal, Flex, Flt, Menu, Pax, PlacePick, Res, Wiz
 from bot.filters_logic import toggle
 from bot.fmt import PAGE_SIZE, dates_label, filters_text, layover_label, pax_label, results_text, route_title
 from bot.states import Wizard
@@ -24,6 +24,7 @@ from common.models import Subscription, User
 from common.places import Place, find_places
 from search.analytics import route_price_stats
 from search.filters import FilterSettings
+from search.flexible import flexible_hint
 from search.history import price_trend
 from search.orchestrator import SearchService
 from search.recommend import recommend
@@ -347,7 +348,7 @@ async def render_results(
         await safe_edit(target, texts.SEARCH_FAILED, kb.home_button())
         return
 
-    trend, rec = None, None
+    trend, rec, flex = None, None, None
     try:
         trend = await price_trend(req.origins, req.destinations, req.date_from, req.date_to)
         best = result.offers[0] if result.offers else None
@@ -357,6 +358,10 @@ async def render_results(
             trend,
             best.departure_date if best else req.date_from,
         )
+        flex = await flexible_hint(
+            svc, req.origins, req.destinations, req.date_from, req.date_to,
+            best.price_rub // max(req.passengers, 1) if best else None,
+        )
     except Exception:  # noqa: BLE001 — без рекомендации выдача всё равно полезна
         log.exception("recommendation failed")
 
@@ -364,7 +369,23 @@ async def render_results(
     page = min(page, max((len(result.offers) - 1) // PAGE_SIZE, 0))
     await state.update_data(page=page)
     sub_id = data.get("subscribed_id")
-    await safe_edit(target, results_text(req, result, stats, page, rec, trend), kb.results(page, len(result.offers), sub_id))
+    await safe_edit(
+        target,
+        results_text(req, result, stats, page, rec, trend, flex),
+        kb.results(page, len(result.offers), sub_id, flex.day if flex else None),
+    )
+
+
+@router.callback_query(Flex.filter())
+async def res_flex(cb: CallbackQuery, callback_data: Flex, state: FSMContext, svc: SearchService, user: User) -> None:
+    data = await state.get_data()
+    if not data.get("date_from"):
+        await show(cb, texts.SESSION_EXPIRED, kb.main_menu())
+        return
+    day = date(callback_data.y, callback_data.m, callback_data.d).isoformat()
+    # Новые даты — новая подписка, старая привязка к результатам больше не актуальна
+    await state.update_data(date_from=day, date_to=day, subscribed_id=None)
+    await render_results(cb, state, svc, user, page=0, use_cache=True, loading=True)
 
 
 @router.callback_query(Res.filter(F.action == "subscribe"))

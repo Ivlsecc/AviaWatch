@@ -42,3 +42,11 @@ class Res(CallbackData, prefix="r"):
 class Sub(CallbackData, prefix="s"):
     action: str
     id: int = 0
+
+
+class Flex(CallbackData, prefix="g"):
+    """Перейти на более дешёвую дату из подсказки гибких дат."""
+
+    y: int
+    m: int
+    d: int

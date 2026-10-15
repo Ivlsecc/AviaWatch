@@ -7,6 +7,7 @@ from html import escape
 
 from search.analytics import PriceStats
 from search.filters import FilterSettings
+from search.flexible import FlexHint
 from search.history import Trend
 from search.recommend import Recommendation
 from search.orchestrator import SearchResult
@@ -126,6 +127,7 @@ def results_text(
     page: int,
     rec: Recommendation | None = None,
     trend: Trend | None = None,
+    flex: FlexHint | None = None,
 ) -> str:
     head = (
         f"<b>{route_title(req)}</b>\n"
@@ -137,6 +139,11 @@ def results_text(
         parts.append(trend_line)
     if rec:
         parts.append(rec_block(rec))
+    if flex:
+        parts.append(
+            f"💡 Вылет <b>{flex.day:%d.%m}</b> — от {rub(flex.price_per_pax)} за пассажира, "
+            f"на {rub(flex.saving_per_pax)} ({flex.saving_pct:.0f}%) дешевле. <i>Цена из календаря, уточнится при поиске</i>"
+        )
 
     offers = result.offers
     if not offers:

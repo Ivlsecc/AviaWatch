@@ -7,7 +7,7 @@ from aiogram.types import InlineKeyboardButton as Btn
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from bot.callbacks import Cal, Flt, Menu, Pax, PlacePick, Res, Sub, Wiz
+from bot.callbacks import Cal, Flex, Flt, Menu, Pax, PlacePick, Res, Sub, Wiz
 from bot.fmt import PAGE_SIZE, dates_label, rub
 from common.models import Subscription
 from common.places import Place
@@ -146,8 +146,10 @@ def filters(f: FilterSettings, ctx: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def results(page: int, total: int, subscribed_id: int | None = None) -> InlineKeyboardMarkup:
+def results(page: int, total: int, subscribed_id: int | None = None, flex_day: date | None = None) -> InlineKeyboardMarkup:
     rows = []
+    if flex_day:
+        rows.append([Btn(text=f"💡 Искать на {flex_day:%d.%m}", callback_data=Flex(y=flex_day.year, m=flex_day.month, d=flex_day.day).pack())])
     nav = []
     if page > 0:
         nav.append(Btn(text="◂ Назад", callback_data=Res(action="page", page=page - 1).pack()))
