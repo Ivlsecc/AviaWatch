@@ -30,6 +30,7 @@ class RunSettings:
     rate_limit_per_min: int = 30
     proxy: str | None = None
     params: dict | None = None
+    focus_days: list | None = None
 
 
 @dataclass
@@ -73,7 +74,9 @@ class SourceRunner:
             self._last_call[name] = time.monotonic()
 
     async def run(self, source: Source, query: SearchQuery, s: RunSettings) -> SourceRunResult:
-        ctx = SourceContext(http=self.client(s.proxy), params=s.params or {}, timeout_s=s.timeout_s)
+        ctx = SourceContext(
+            http=self.client(s.proxy), params=s.params or {}, timeout_s=s.timeout_s, focus_days=s.focus_days
+        )
         started = time.monotonic()
         last_error = "unknown"
         for attempt in range(s.retries + 1):

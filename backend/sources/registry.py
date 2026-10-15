@@ -27,4 +27,6 @@ def _load_builtin() -> None:
     # Импорт модулей регистрирует источники через @register
     import sources.aviasales_api  # noqa: F401
     import sources.egyptticket  # noqa: F401
+    import sources.kupibilet  # noqa: F401
+    import sources.onetwotrip  # noqa: F401
     import sources.tutu  # noqa: F401

@@ -18,7 +18,7 @@ import uuid
 from datetime import date, datetime
 from typing import Any
 
-from sources.base import FlightOffer, SearchQuery, Segment, Source, SourceContext, SourceError
+from sources.base import FlightOffer, SearchQuery, Segment, Source, SourceContext, SourceError, focus_days
 from sources.registry import register
 
 SUGGEST_URL = "https://suggester-avia.tutu.ru/api/location_suggest/v2"
@@ -60,14 +60,13 @@ class TutuSource(Source):
         return offers
 
     async def _pick_days(self, query: SearchQuery, ctx: SourceContext) -> list[date]:
-        """Один поиск Туту ≈ 10 с, поэтому на длинном диапазоне ищем только самые дешёвые дни по календарю."""
-        all_days = query.dates()
+        """Один поиск Туту ≈ 10 с, поэтому на длинном диапазоне ищем только самые дешёвые дни."""
         max_days = int(ctx.params.get("max_days") or MAX_DAYS)
-        if len(all_days) <= max_days:
-            return all_days
+        if len(query.dates()) <= max_days or ctx.focus_days:
+            return focus_days(query, ctx, max_days)
         cal = await self.calendar(query.origin, query.destination, query.date_from, query.date_to, ctx)
         if not cal:
-            return all_days[:max_days]
+            return focus_days(query, ctx, max_days)
         return sorted(sorted(cal, key=cal.get)[:max_days])
 
     async def _search_day(self, ctx: SourceContext, q: SearchQuery, dep_id: int, arr_id: int, day: date) -> list:

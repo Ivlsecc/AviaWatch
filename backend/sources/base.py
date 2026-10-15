@@ -121,6 +121,24 @@ class SourceContext:
     http: httpx.AsyncClient
     params: dict[str, Any] = field(default_factory=dict)
     timeout_s: float = 20.0
+    # Самые дешёвые дни диапазона по календарю цен — подсказка для «дорогих» источников,
+    # которые ищут по одному дню. Заполняет оркестратор на длинных диапазонах.
+    focus_days: list[date] | None = None
+
+
+MAX_SEARCH_DAYS = 5
+
+
+def focus_days(query: "SearchQuery", ctx: SourceContext, max_days: int = MAX_SEARCH_DAYS) -> list[date]:
+    """Дни, по которым искать: весь короткий диапазон или самые дешёвые дни длинного."""
+    days = query.dates()
+    if len(days) <= max_days:
+        return days
+    if ctx.focus_days:
+        return sorted(d for d in ctx.focus_days if query.date_from <= d <= query.date_to)[:max_days]
+    # Без календаря — равномерно по диапазону, чтобы не искать только в начале
+    step = len(days) / max_days
+    return [days[int(i * step)] for i in range(max_days)]
 
 
 class SourceError(Exception):

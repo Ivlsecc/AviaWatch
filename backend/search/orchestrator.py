@@ -21,7 +21,7 @@ from search.cache import Cache, dumps, make_cache
 from search.dedup import merge_duplicates
 from search.filters import FilterSettings, apply_filters
 from search.runner import RunSettings, SourceRunner, SourceRunResult
-from sources.base import FlightOffer, SearchQuery, SourceContext
+from sources.base import MAX_SEARCH_DAYS, FlightOffer, SearchQuery, SourceContext
 from sources.registry import all_sources, get_source
 
 log = logging.getLogger(__name__)
@@ -133,6 +133,7 @@ class SearchService:
             configs = (await s.scalars(select(SourceConfig).order_by(SourceConfig.priority))).all()
 
         registered = all_sources()
+        focus = await self._focus_days(query)
         tasks, statuses = [], []
         for cfg in configs:
             if cfg.name not in registered or not cfg.enabled:
@@ -140,7 +141,9 @@ class SearchService:
             if (until := as_utc(cfg.disabled_until)) and until > now:
                 statuses.append(SourceStatus(cfg.name, False, 0, "временно отключён после ошибок", skipped=True))
                 continue
-            tasks.append(self.runner.run(get_source(cfg.name), query, self._run_settings(cfg)))
+            rs = self._run_settings(cfg)
+            rs.focus_days = focus
+            tasks.append(self.runner.run(get_source(cfg.name), query, rs))
 
         results: list[SourceRunResult] = await asyncio.gather(*tasks)
         await self._update_health(results)
@@ -150,6 +153,17 @@ class SearchService:
             offers += r.offers
             statuses.append(SourceStatus(r.source, r.ok, len(r.offers), r.error))
         return offers, statuses
+
+    async def _focus_days(self, query: SearchQuery) -> list[date] | None:
+        """На длинном диапазоне — самые дешёвые дни по календарю (для источников «по одному дню»)."""
+        if len(query.dates()) <= MAX_SEARCH_DAYS:
+            return None
+        try:
+            cal = await self.calendar(query.origin, query.destination, query.date_from, query.date_to)
+        except Exception:  # noqa: BLE001 — без подсказки источники разложат дни равномерно
+            log.exception("focus days calendar failed")
+            return None
+        return sorted(sorted(cal, key=cal.get)[:MAX_SEARCH_DAYS]) or None
 
     async def calendar(self, origin: str, destination: str, date_from: date, date_to: date) -> dict[date, int]:
         """Минимальная цена за 1 взрослого по дням вылета из всех календарных источников."""
