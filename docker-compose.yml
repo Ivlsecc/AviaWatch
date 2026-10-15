@@ -1,16 +1,23 @@
 name: aviawatch
 
-x-backend: &backend
-  build: ./backend
+# Запуск всего: docker compose up -d --build
+# Админка: http://<сервер>:8000 (логин/пароль — ADMIN_USERNAME / ADMIN_PASSWORD из .env)
+
+x-app: &app
+  build: .
+  image: aviawatch:latest
   env_file:
     - path: .env
       required: false
   environment:
     DATABASE_URL: postgresql+asyncpg://aviawatch:${POSTGRES_PASSWORD:-aviawatch}@postgres:5432/aviawatch
     REDIS_URL: redis://redis:6379/0
-  depends_on:
-    postgres: { condition: service_healthy }
-    redis: { condition: service_started }
+    # Прокси с хоста внутри контейнера не работают — задайте явно в .env, если нужны
+    HTTP_PROXY: ${APP_HTTP_PROXY:-}
+    HTTPS_PROXY: ${APP_HTTP_PROXY:-}
+    TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
+  volumes:
+    - appcache:/app/.cache
   restart: unless-stopped
 
 services:
@@ -21,22 +28,51 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aviawatch}
       POSTGRES_DB: aviawatch
     volumes: [pgdata:/var/lib/postgresql/data]
-    ports: ["5432:5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U aviawatch"]
       interval: 5s
-      retries: 10
+      retries: 20
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    ports: ["6379:6379"]
     restart: unless-stopped
 
   migrate:
-    <<: *backend
+    <<: *app
     command: ["alembic", "upgrade", "head"]
+    depends_on:
+      postgres: { condition: service_healthy }
     restart: "no"
+
+  bot:
+    <<: *app
+    command: ["python", "-m", "bot.main"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://aviawatch:${POSTGRES_PASSWORD:-aviawatch}@postgres:5432/aviawatch
+      REDIS_URL: redis://redis:6379/0
+      HTTP_PROXY: ${APP_HTTP_PROXY:-}
+      HTTPS_PROXY: ${APP_HTTP_PROXY:-}
+      TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
+      METRICS_PORT: "9101"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_started }
+
+  api:
+    <<: *app
+    command: ["python", "-m", "api.main"]
+    ports: ["${API_PORT:-8000}:8000"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://aviawatch:${POSTGRES_PASSWORD:-aviawatch}@postgres:5432/aviawatch
+      REDIS_URL: redis://redis:6379/0
+      HTTP_PROXY: ${APP_HTTP_PROXY:-}
+      HTTPS_PROXY: ${APP_HTTP_PROXY:-}
+      TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
+      API_PORT: "8000"
+      PROMETHEUS_URL: http://prometheus:9090
+    depends_on:
+      migrate: { condition: service_completed_successfully }
 
   prometheus:
     image: prom/prometheus:v2.53.0
@@ -44,15 +80,13 @@ services:
       - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - promdata:/prometheus
     command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=30d"]
-    ports: ["9090:9090"]
     restart: unless-stopped
 
   node-exporter:
     image: prom/node-exporter:v1.8.1
     restart: unless-stopped
 
-  # Сервисы приложения (bot, worker, scheduler, api, admin) добавляются на следующих этапах
-
 volumes:
   pgdata:
   promdata:
+  appcache:

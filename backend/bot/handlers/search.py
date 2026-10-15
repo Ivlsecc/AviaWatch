@@ -18,7 +18,7 @@ from bot.callbacks import Cal, Flt, Menu, Pax, PlacePick, Res, Wiz
 from bot.filters_logic import toggle
 from bot.fmt import PAGE_SIZE, dates_label, filters_text, layover_label, pax_label, results_text, route_title
 from bot.states import Wizard
-from bot.utils import show
+from bot.utils import safe_edit, show
 from common.db import session_scope
 from common.models import Subscription, User
 from common.places import Place, find_places
@@ -342,28 +342,29 @@ async def render_results(
             search_route(svc, req, filters, user.id, use_cache=use_cache),
             route_price_stats(svc, req.origins, req.destinations),
         )
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 — пользователь должен увидеть ответ, а не вечное «Ищу…»
         log.exception("search failed")
-        await target.edit_text(texts.SEARCH_FAILED, reply_markup=kb.home_button())
+        await safe_edit(target, texts.SEARCH_FAILED, kb.home_button())
         return
 
-    trend = await price_trend(req.origins, req.destinations, req.date_from, req.date_to)
-    best = result.offers[0] if result.offers else None
-    rec = recommend(
-        best.price_rub // max(req.passengers, 1) if best else None,
-        stats,
-        trend,
-        best.departure_date if best else req.date_from,
-    )
+    trend, rec = None, None
+    try:
+        trend = await price_trend(req.origins, req.destinations, req.date_from, req.date_to)
+        best = result.offers[0] if result.offers else None
+        rec = recommend(
+            best.price_rub // max(req.passengers, 1) if best else None,
+            stats,
+            trend,
+            best.departure_date if best else req.date_from,
+        )
+    except Exception:  # noqa: BLE001 — без рекомендации выдача всё равно полезна
+        log.exception("recommendation failed")
 
     await state.set_state(Wizard.results)
     page = min(page, max((len(result.offers) - 1) // PAGE_SIZE, 0))
     await state.update_data(page=page)
     sub_id = data.get("subscribed_id")
-    try:
-        await target.edit_text(results_text(req, result, stats, page, rec, trend), reply_markup=kb.results(page, len(result.offers), sub_id))
-    except Exception:  # noqa: BLE001 — например, «message is not modified»
-        pass
+    await safe_edit(target, results_text(req, result, stats, page, rec, trend), kb.results(page, len(result.offers), sub_id))
 
 
 @router.callback_query(Res.filter(F.action == "subscribe"))
@@ -379,10 +380,12 @@ async def res_subscribe(cb: CallbackQuery, state: FSMContext, svc: SearchService
         count = await s.scalar(
             select(func.count(Subscription.id)).where(Subscription.user_id == user.id, Subscription.is_active.is_(True))
         )
-        if count >= user.max_subscriptions:
-            await cb.answer(f"Можно следить максимум за {user.max_subscriptions} маршрутами", show_alert=True)
-            return
-        result = await search_route(svc, req, filters, user.id)
+    if count >= user.max_subscriptions:
+        await cb.answer(f"Можно следить максимум за {user.max_subscriptions} маршрутами", show_alert=True)
+        return
+    # Поиск — вне транзакции: он сам пишет в БД (история, логи), а SQLite не любит долгие блокировки
+    result = await search_route(svc, req, filters, user.id)
+    async with session_scope() as s:
         sub = Subscription(
             user_id=user.id,
             origin=",".join(req.origins),
@@ -405,7 +408,4 @@ async def res_subscribe(cb: CallbackQuery, state: FSMContext, svc: SearchService
 
     await state.update_data(subscribed_id=sub_id)
     await cb.answer("🔔 Готово! Напишу, когда цена снизится. Настроить порог и сводки — кнопка ниже.", show_alert=True)
-    try:
-        await cb.message.edit_reply_markup(reply_markup=kb.results(data.get("page", 0), len(result.offers), sub_id))
-    except Exception:  # noqa: BLE001
-        pass
+    await safe_edit(cb.message, None, kb.results(data.get("page", 0), len(result.offers), sub_id))

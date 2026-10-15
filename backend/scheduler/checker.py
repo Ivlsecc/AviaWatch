@@ -6,6 +6,7 @@ import asyncio
 import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Protocol
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
@@ -24,6 +25,13 @@ from search.recommend import Recommendation, recommend
 from search.routes import RouteRequest, search_route
 
 log = logging.getLogger(__name__)
+
+# Даты поездок пользователи задают по местному времени; для РФ/Египта берём московское
+LOCAL_TZ = ZoneInfo("Europe/Moscow")
+
+
+def local_today(now: datetime) -> date:
+    return now.astimezone(LOCAL_TZ).date()
 
 
 class Notifier(Protocol):
@@ -95,9 +103,9 @@ class SubscriptionChecker:
             ).all()
             # Даты поездки прошли — подписка больше не нужна
             for sub in subs:
-                if sub.date_to < now.date():
+                if sub.date_to < local_today(now):
                     sub.is_active = False
-        active = [sub for sub in subs if sub.date_to >= now.date()]
+        active = [sub for sub in subs if sub.date_to >= local_today(now)]
         await asyncio.gather(*(self._check_guarded(sub, now) for sub in active))
         return len(active)
 
@@ -110,7 +118,7 @@ class SubscriptionChecker:
 
     async def check(self, sub: Subscription, now: datetime | None = None, force_send: bool = False) -> Decision:
         now = now or datetime.now(timezone.utc)
-        result = await search_route(self.svc, subscription_request(sub, now.date()), FilterSettings.from_dict(sub.filters))
+        result = await search_route(self.svc, subscription_request(sub, local_today(now)), FilterSettings.from_dict(sub.filters))
         min_price = result.offers[0].price_rub if result.offers else None
 
         state = SubState(
@@ -130,13 +138,13 @@ class SubscriptionChecker:
 
         sent = False
         if decision.send:
-            req = subscription_request(sub, now.date())
+            req = subscription_request(sub, local_today(now))
             rec = None
             try:
-                stats = await route_price_stats(self.svc, req.origins, req.destinations, today=now.date())
-                trend = await price_trend(req.origins, req.destinations, req.date_from, req.date_to, today=now.date())
+                stats = await route_price_stats(self.svc, req.origins, req.destinations, today=local_today(now))
+                trend = await price_trend(req.origins, req.destinations, req.date_from, req.date_to, today=local_today(now))
                 best = result.offers[0]
-                rec = recommend(best.price_rub // max(req.passengers, 1), stats, trend, best.departure_date, now.date())
+                rec = recommend(best.price_rub // max(req.passengers, 1), stats, trend, best.departure_date, local_today(now))
             except Exception:  # noqa: BLE001 — без рекомендации уведомление всё равно полезно
                 log.exception("recommendation failed")
             sent = await self.notifier.notify(sub, sub.user, result, decision, sub.last_min_price, rec)
