@@ -24,7 +24,9 @@ from common.models import Subscription, User
 from common.places import Place, find_places
 from search.analytics import route_price_stats
 from search.filters import FilterSettings
+from search.history import price_trend
 from search.orchestrator import SearchService
+from search.recommend import recommend
 from search.routes import RouteRequest, search_route
 
 log = logging.getLogger(__name__)
@@ -345,12 +347,21 @@ async def render_results(
         await target.edit_text(texts.SEARCH_FAILED, reply_markup=kb.home_button())
         return
 
+    trend = await price_trend(req.origins, req.destinations, req.date_from, req.date_to)
+    best = result.offers[0] if result.offers else None
+    rec = recommend(
+        best.price_rub // max(req.passengers, 1) if best else None,
+        stats,
+        trend,
+        best.departure_date if best else req.date_from,
+    )
+
     await state.set_state(Wizard.results)
     page = min(page, max((len(result.offers) - 1) // PAGE_SIZE, 0))
     await state.update_data(page=page)
     sub_id = data.get("subscribed_id")
     try:
-        await target.edit_text(results_text(req, result, stats, page), reply_markup=kb.results(page, len(result.offers), sub_id))
+        await target.edit_text(results_text(req, result, stats, page, rec, trend), reply_markup=kb.results(page, len(result.offers), sub_id))
     except Exception:  # noqa: BLE001 — например, «message is not modified»
         pass
 

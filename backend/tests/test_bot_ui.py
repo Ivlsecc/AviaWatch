@@ -6,7 +6,9 @@ from bot.fmt import plural, results_text, rub
 from common.models import Subscription
 from search.analytics import PriceStats
 from search.filters import FilterSettings
+from search.history import Trend
 from search.orchestrator import SearchResult, SourceStatus
+from search.recommend import Recommendation
 from search.routes import RouteRequest
 from sources.base import FlightOffer, SearchQuery
 
@@ -53,7 +55,11 @@ def test_results_text_pagination_and_escaping():
                           _offers(7), 7, [SourceStatus("aviasales_api", True, 7)])
     stats = PriceStats(mean=18000, median=17500, days=30, past_days=0, window_from=date(2026, 9, 15),
                        window_to=date(2026, 11, 14))
-    text = results_text(REQ, result, stats, page=1)
+    rec = Recommendation("buy", 30, ["на 14% дешевле обычной цены"], low_confidence=True)
+    trend = Trend([(date(2026, 10, 10), 20000), (date(2026, 10, 12), 19000), (date(2026, 10, 15), 18000)])
+    text = results_text(REQ, result, stats, page=1, rec=rec, trend=trend)
+    assert "🟢 <b>Стоит покупать</b>" in text and "на 14% дешевле" in text and "оценка приблизительная" in text
+    assert "📉 Цена на ваши даты за 5 дн.: █▅▁ −10%" in text
     assert "Хургада / Шарм-эль-Шейх → Москва" in text
     assert "6. <b>35" in text and "7. <b>36" in text and "1. <b>" not in text
     assert "Показано 6–7 из 7" in text
@@ -61,7 +67,6 @@ def test_results_text_pagination_and_escaping():
     assert "&amp;b=&lt;1&gt;" in text  # ссылка экранирована
     assert "История за прошлые дни ещё копится" in text
     assert "на 2 пасс." in text
-    assert "ниже средней" in text  # 30000/2 = 15000 < 18000
 
 
 def test_results_markup_navigation():

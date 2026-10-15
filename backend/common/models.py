@@ -121,6 +121,23 @@ class PriceSnapshot(Base):
     collected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
 
 
+class PriceDaily(Base):
+    """Дневной агрегат истории: минимальная цена на дату вылета, увиденная в конкретный день.
+
+    Сырые PriceSnapshot старше N дней сворачиваются сюда и удаляются — история
+    не растёт бесконечно, а тренды и средние по-прежнему считаются.
+    """
+
+    __tablename__ = "price_daily"
+
+    origin: Mapped[str] = mapped_column(String(8), primary_key=True)
+    destination: Mapped[str] = mapped_column(String(8), primary_key=True)
+    departure_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    collected_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    min_price: Mapped[int] = mapped_column(Integer)
+    samples: Mapped[int] = mapped_column(Integer, default=1)
+
+
 class SearchLog(Base):
     __tablename__ = "search_logs"
 

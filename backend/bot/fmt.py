@@ -7,6 +7,8 @@ from html import escape
 
 from search.analytics import PriceStats
 from search.filters import FilterSettings
+from search.history import Trend
+from search.recommend import Recommendation
 from search.orchestrator import SearchResult
 from search.routes import RouteRequest
 from sources.base import FlightOffer
@@ -104,13 +106,24 @@ def stats_block(stats: PriceStats | None, pax: int) -> str:
     return text
 
 
-def results_text(req: RouteRequest, result: SearchResult, stats: PriceStats | None, page: int) -> str:
+def results_text(
+    req: RouteRequest,
+    result: SearchResult,
+    stats: PriceStats | None,
+    page: int,
+    rec: Recommendation | None = None,
+    trend: Trend | None = None,
+) -> str:
     head = (
         f"<b>{route_title(req)}</b>\n"
         f"📅 {dates_label(req.date_from, req.date_to)} · 👤 {pax_label(req.adults, req.children, req.infants)}"
         + (" · только прямые" if req.direct_only else "")
     )
     parts = [head, stats_block(stats, req.passengers)]
+    if trend_line := trend_block(trend):
+        parts.append(trend_line)
+    if rec:
+        parts.append(rec_block(rec))
 
     offers = result.offers
     if not offers:
@@ -119,16 +132,40 @@ def results_text(req: RouteRequest, result: SearchResult, stats: PriceStats | No
         start = page * PAGE_SIZE
         chunk = offers[start : start + PAGE_SIZE]
         parts.append("\n\n".join(offer_line(start + i + 1, o) for i, o in enumerate(chunk)))
-        cheapest = offers[0].price_rub
-        if stats and stats.mean:
-            per_pax = cheapest / max(req.passengers, 1)
-            diff = (per_pax - stats.mean) / stats.mean * 100
-            sign = "ниже" if diff < 0 else "выше"
-            parts.append(f"💡 Лучшая цена на {abs(diff):.0f}% {sign} средней")
         parts.append(f"<i>Показано {start + 1}–{start + len(chunk)} из {len(offers)}</i>")
 
     parts.append(sources_line(result))
     return "\n\n".join(parts)
+
+
+SPARKS = "▁▂▃▄▅▆▇█"
+
+
+def sparkline(values: list[int]) -> str:
+    lo, hi = min(values), max(values)
+    if hi == lo:
+        return SPARKS[3] * len(values)
+    return "".join(SPARKS[round((v - lo) / (hi - lo) * (len(SPARKS) - 1))] for v in values)
+
+
+def trend_block(trend: Trend | None) -> str | None:
+    if not trend or not trend.enough:
+        return None
+    change = trend.change_pct
+    arrow = "📉" if change < -1 else ("📈" if change > 1 else "➡️")
+    values = [p for _, p in trend.points[-14:]]
+    return (
+        f"{arrow} Цена на ваши даты за {trend.days} дн.: {sparkline(values)} "
+        f"{'+' if change > 0 else '−' if change < 0 else ''}{abs(change):.0f}%"
+    )
+
+
+def rec_block(rec: Recommendation) -> str:
+    lines = [f"{rec.emoji} <b>{rec.title}</b>"]
+    lines += [f"    • {escape(r)}" for r in rec.reasons[:3]]
+    if rec.low_confidence:
+        lines.append("    <i>данных пока мало — оценка приблизительная, точнее станет через пару дней</i>")
+    return "\n".join(lines)
 
 
 def sources_line(result: SearchResult) -> str:

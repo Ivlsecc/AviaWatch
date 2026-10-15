@@ -15,8 +15,11 @@ from common.db import session_scope
 from common.metrics import NOTIFICATIONS
 from common.models import Subscription, User
 from scheduler.rules import Decision, SubState, evaluate
+from search.analytics import route_price_stats
 from search.filters import FilterSettings
+from search.history import price_trend, roll_up_and_prune
 from search.orchestrator import SearchResult, SearchService, as_utc
+from search.recommend import Recommendation, recommend
 from search.routes import RouteRequest, search_route
 
 log = logging.getLogger(__name__)
@@ -24,7 +27,13 @@ log = logging.getLogger(__name__)
 
 class Notifier(Protocol):
     async def notify(
-        self, sub: Subscription, user: User, result: SearchResult, decision: Decision, prev_price: int | None
+        self,
+        sub: Subscription,
+        user: User,
+        result: SearchResult,
+        decision: Decision,
+        prev_price: int | None,
+        rec: Recommendation | None = None,
     ) -> bool: ...
 
 
@@ -50,6 +59,7 @@ class SubscriptionChecker:
         self.notifier = notifier
         self.settings = get_settings()
         self._sem = asyncio.Semaphore(concurrency)
+        self._last_maintenance: datetime | None = None
 
     async def run_forever(self, tick_s: int = 60) -> None:
         while True:
@@ -61,6 +71,12 @@ class SubscriptionChecker:
 
     async def tick(self, now: datetime | None = None) -> int:
         now = now or datetime.now(timezone.utc)
+        if self._last_maintenance is None or now - self._last_maintenance >= timedelta(hours=24):
+            self._last_maintenance = now
+            try:
+                await roll_up_and_prune(now=now)
+            except Exception:  # noqa: BLE001
+                log.exception("history maintenance failed")
         due_before = now - timedelta(minutes=self.settings.subscription_check_minutes)
         async with session_scope() as s:
             subs = (
@@ -112,7 +128,16 @@ class SubscriptionChecker:
 
         sent = False
         if decision.send:
-            sent = await self.notifier.notify(sub, sub.user, result, decision, sub.last_min_price)
+            req = subscription_request(sub, now.date())
+            rec = None
+            try:
+                stats = await route_price_stats(self.svc, req.origins, req.destinations, today=now.date())
+                trend = await price_trend(req.origins, req.destinations, req.date_from, req.date_to, today=now.date())
+                best = result.offers[0]
+                rec = recommend(best.price_rub // max(req.passengers, 1), stats, trend, best.departure_date, now.date())
+            except Exception:  # noqa: BLE001 — без рекомендации уведомление всё равно полезно
+                log.exception("recommendation failed")
+            sent = await self.notifier.notify(sub, sub.user, result, decision, sub.last_min_price, rec)
             for ev in decision.events:
                 NOTIFICATIONS.labels(ev).inc()
 

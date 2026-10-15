@@ -12,10 +12,7 @@ import statistics
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from sqlalchemy import func, select
-
-from common.db import session_scope
-from common.models import PriceSnapshot
+from search.history import past_daily_min
 from search.orchestrator import SearchService
 
 WINDOW_DAYS = 30
@@ -29,6 +26,7 @@ class PriceStats:
     past_days: int  # из них из истории (прошлые даты)
     window_from: date
     window_to: date
+    p25: int | None = None  # четверть дней дешевле этой цены — «очень хорошая цена»
 
     @property
     def has_history(self) -> bool:
@@ -48,7 +46,7 @@ async def route_price_stats(
             if d not in future or p < future[d]:
                 future[d] = p
 
-    past = await _past_daily_min(origins, destinations, w_from, today - timedelta(days=1))
+    past = await past_daily_min(origins, destinations, w_from, today - timedelta(days=1))
     return compute_stats(past, future, w_from, w_to)
 
 
@@ -63,20 +61,5 @@ def compute_stats(past: dict[date, int], future: dict[date, int], w_from: date, 
         past_days=len(past),
         window_from=w_from,
         window_to=w_to,
+        p25=round(statistics.quantiles(prices, n=4)[0]) if len(prices) >= 4 else None,
     )
-
-
-async def _past_daily_min(origins: list[str], destinations: list[str], d_from: date, d_to: date) -> dict[date, int]:
-    if d_from > d_to:
-        return {}
-    async with session_scope() as s:
-        rows = await s.execute(
-            select(PriceSnapshot.departure_date, func.min(PriceSnapshot.price_rub))
-            .where(
-                PriceSnapshot.origin.in_(origins),
-                PriceSnapshot.destination.in_(destinations),
-                PriceSnapshot.departure_date.between(d_from, d_to),
-            )
-            .group_by(PriceSnapshot.departure_date)
-        )
-        return {d: p for d, p in rows.all()}

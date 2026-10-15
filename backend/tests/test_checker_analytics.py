@@ -35,8 +35,10 @@ class FakeCalendarSource(Source):
 class FakeNotifier:
     def __init__(self):
         self.sent = []
+        self.recs = []
 
-    async def notify(self, sub, user, result, decision, prev_price):
+    async def notify(self, sub, user, result, decision, prev_price, rec=None):
+        self.recs.append(rec)
         self.sent.append((sub.id, decision.events, result.offers[0].price_rub, prev_price))
         return True
 
