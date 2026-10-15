@@ -67,6 +67,8 @@ def duration(minutes: int | None) -> str:
 
 
 def source_title(name: str) -> str:
+    if name == "combo":
+        return "Составные маршруты"
     cls = all_sources().get(name)
     return cls.title if cls else name
 
@@ -82,6 +84,14 @@ def transfers_label(o: FlightOffer) -> str:
 def offer_line(i: int, o: FlightOffer) -> str:
     flights = ", ".join(o.flight_numbers) or ", ".join(o.airlines)
     details = " · ".join(x for x in (transfers_label(o), duration(o.duration_min), flights) if x)
+    if o.legs_links:
+        links = [f'<a href="{escape(link, quote=True)}">{escape(label)}</a> {rub(p)}' for label, p, link in o.legs_links]
+        return (
+            f"{i}. <b>{rub(o.price_rub)}</b> · {o.departure_at:%d.%m %H:%M} · {o.origin_airport}→{o.destination_airport}\n"
+            f"    🧩 {' → '.join(o.route_airports)} · {duration(o.duration_min)} · {', '.join(o.flight_numbers)}\n"
+            f"    ⚠️ {escape(o.note or '')}\n"
+            f"    🛒 {' + '.join(links)}"
+        )
     links = [f'<a href="{escape(o.link, quote=True)}">{escape(source_title(o.source))}</a>']
     links += [f'<a href="{escape(link, quote=True)}">{escape(source_title(src))} {rub(p)}</a>' for src, p, link in o.alt_links]
     when = f"{o.departure_at:%d.%m %H:%M}" if o.time_known else f"{o.departure_at:%d.%m}, время уточнять"
@@ -192,6 +202,8 @@ def filters_text(f: FilterSettings) -> str:
             f"• Смена аэропорта при стыковке: <b>{'исключать' if f.exclude_airport_change else 'разрешить'}</b>",
             f"• Самостоятельная пересадка: <b>{'исключать' if f.exclude_self_transfer else 'разрешить'}</b>",
             f"• Ночные стыковки: <b>{'исключать' if f.exclude_night_layovers else 'разрешить'}</b>",
+            f"• 🧩 Составные маршруты: <b>{'искать' if f.self_combos else 'нет'}</b>",
+            "   <i>два отдельных билета через Стамбул/Каир/Дубай — бывает намного дешевле, но багаж и риск опоздания на вас</i>",
         ]
     )
 

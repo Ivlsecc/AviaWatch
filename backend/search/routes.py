@@ -12,7 +12,7 @@ from datetime import date
 from pydantic import BaseModel, Field
 
 from search.dedup import merge_duplicates
-from search.filters import FilterSettings
+from search.filters import FilterSettings, apply_filters
 from search.orchestrator import SearchResult, SearchService, SourceStatus
 from sources.base import SearchQuery
 
@@ -54,9 +54,8 @@ class RouteRequest(BaseModel):
 async def search_route(
     svc: SearchService, req: RouteRequest, filters: FilterSettings, user_id: int | None = None, use_cache: bool = True
 ) -> SearchResult:
-    results = await asyncio.gather(*(svc.search(q, filters, user_id, use_cache) for q in req.queries()))
-    if len(results) == 1:
-        return results[0]
+    queries = req.queries()
+    results = await asyncio.gather(*(svc.search(q, filters, user_id, use_cache) for q in queries))
 
     statuses: dict[str, SourceStatus] = {}
     for r in results:
@@ -65,6 +64,13 @@ async def search_route(
             agg.offers += st.offers
             agg.ok = agg.ok or st.ok
     offers = merge_duplicates([o for r in results for o in r.offers])
+
+    if filters.self_combos:
+        combos = await _combos(svc, queries, filters)
+        if combos:
+            statuses["combo"] = SourceStatus("combo", True, len(combos))
+            offers = sorted(offers + combos, key=lambda o: (o.price_rub, o.departure_at))
+
     return SearchResult(
         query=results[0].query,
         offers=offers,
@@ -72,3 +78,19 @@ async def search_route(
         statuses=list(statuses.values()),
         from_cache=all(r.from_cache for r in results),
     )
+
+
+async def _combos(svc: SearchService, queries: list[SearchQuery], filters: FilterSettings) -> list:
+    from search.combos import find_combos, worth_showing
+
+    found = []
+    for part in await asyncio.gather(*(find_combos(svc, q) for q in queries)):
+        found += part
+    # Составной маршрут по определению с самостоятельной пересадкой — этот фильтр к нему не применяем
+    combo_filters = filters.model_copy(update={"exclude_self_transfer": False, "max_transfers": max(filters.max_transfers, 1)})
+    found = apply_filters(found, combo_filters)
+    regular = []
+    for q in queries:
+        res = await svc.search(q, filters, log_search=False)  # из кэша — уже посчитано выше
+        regular += res.offers
+    return worth_showing(found, regular)

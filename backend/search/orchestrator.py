@@ -85,21 +85,25 @@ class SearchService:
         filters: FilterSettings | None = None,
         user_id: int | None = None,
         use_cache: bool = True,
+        only_sources: set[str] | None = None,
+        log_search: bool = True,
     ) -> SearchResult:
+        """only_sources — опросить только эти источники (служебные поиски, например ноги составных маршрутов)."""
         started = time.monotonic()
         filters = filters or FilterSettings()
+        cache_key = query.cache_key() + (":" + ",".join(sorted(only_sources)) if only_sources else "")
 
         raw, statuses, from_cache = None, [], False
-        if use_cache and (cached := await self.cache.get(query.cache_key())):
+        if use_cache and (cached := await self.cache.get(cache_key)):
             data = json.loads(cached)
             raw = [FlightOffer.model_validate(o) for o in data["offers"]]
             statuses = [SourceStatus(**st) for st in data["statuses"]]
             from_cache = True
 
         if raw is None:
-            raw, statuses = await self._collect(query)
+            raw, statuses = await self._collect(query, only_sources)
             await self.cache.set(
-                query.cache_key(),
+                cache_key,
                 dumps({"offers": [o.model_dump(mode="json") for o in raw], "statuses": [st.__dict__ for st in statuses]}),
                 self.settings.search_cache_ttl_s,
             )
@@ -110,6 +114,8 @@ class SearchService:
         # Сначала склейка: фильтры должны видеть самые подробные данные о рейсе
         offers = apply_filters(merge_duplicates(raw), filters)
 
+        if not log_search:
+            return SearchResult(query, offers, len(raw), statuses, from_cache)
         SEARCHES.labels(query.origin, str(from_cache).lower()).inc()
         async with session_scope() as s:
             s.add(
@@ -127,7 +133,9 @@ class SearchService:
             )
         return SearchResult(query, offers, len(raw), statuses, from_cache)
 
-    async def _collect(self, query: SearchQuery) -> tuple[list[FlightOffer], list[SourceStatus]]:
+    async def _collect(
+        self, query: SearchQuery, only_sources: set[str] | None = None
+    ) -> tuple[list[FlightOffer], list[SourceStatus]]:
         now = datetime.now(timezone.utc)
         async with session_scope() as s:
             configs = (await s.scalars(select(SourceConfig).order_by(SourceConfig.priority))).all()
@@ -137,6 +145,8 @@ class SearchService:
         tasks, statuses = [], []
         for cfg in configs:
             if cfg.name not in registered or not cfg.enabled:
+                continue
+            if only_sources is not None and cfg.name not in only_sources:
                 continue
             if (until := as_utc(cfg.disabled_until)) and until > now:
                 statuses.append(SourceStatus(cfg.name, False, 0, "временно отключён после ошибок", skipped=True))

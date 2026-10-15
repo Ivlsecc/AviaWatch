@@ -82,6 +82,8 @@ class FlightOffer(BaseModel):
     note: str | None = None
     # Другие источники, где найден тот же рейс (заполняется при склейке дублей)
     alt_links: list[tuple[str, int, str]] = Field(default_factory=list)
+    # Составной маршрут: отдельные билеты (подпись, цена, ссылка) — покупать каждый
+    legs_links: list[tuple[str, int, str]] = Field(default_factory=list)
     collected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
@@ -96,6 +98,9 @@ class FlightOffer(BaseModel):
         аэропорт прилёта + число пересадок практически однозначно задают перелёт.
         """
         dep = self.departure_at.astimezone(timezone.utc).strftime("%Y%m%d%H%M")
+        if self.legs_links:
+            # Составной маршрут никогда не склеиваем с обычным билетом: иначе он «унаследует» его условия
+            return ("combo", dep, tuple(self.flight_numbers))
         first = re.sub(r"[\s\-–—]", "", self.flight_numbers[0]).upper() if self.flight_numbers else None
         if first:
             return (dep, first, self.destination_airport, self.transfers)

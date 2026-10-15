@@ -20,6 +20,8 @@ class FilterSettings(BaseModel):
     exclude_self_transfer: bool = True
     exclude_night_layovers: bool = False
     baggage_required: bool = False
+    # Искать составные маршруты из отдельных билетов через хабы (Стамбул, Каир, Дубай…)
+    self_combos: bool = False
 
     @classmethod
     def from_dict(cls, data: dict | None) -> "FilterSettings":

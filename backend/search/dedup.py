@@ -25,13 +25,16 @@ def merge_duplicates(offers: list[FlightOffer]) -> list[FlightOffer]:
         if richest is not group[0] and richest.detail_score() > best.detail_score():
             best = best.model_copy(update={f: getattr(richest, f) for f in DETAIL_FIELDS})
 
+        # Повторная склейка (например, по нескольким городам маршрута) не должна терять уже найденные ссылки
         seen = {best.source}
         alts = []
-        for other in group[1:]:
-            if other.source in seen:
+        candidates = [(o.source, o.price_rub, o.link) for o in group[1:]]
+        candidates += [alt for o in group for alt in o.alt_links]
+        for src, price, link in sorted(candidates, key=lambda a: a[1]):
+            if src in seen:
                 continue
-            seen.add(other.source)
-            alts.append((other.source, other.price_rub, other.link))
+            seen.add(src)
+            alts.append((src, price, link))
         best.alt_links = alts
         merged.append(best)
 

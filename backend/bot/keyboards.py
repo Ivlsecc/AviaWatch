@@ -135,6 +135,7 @@ def filters(f: FilterSettings, ctx: str) -> InlineKeyboardMarkup:
         [b(("✅" if f.exclude_airport_change else "⬜") + " Без смены аэропорта", "airport")],
         [b(("✅" if f.exclude_self_transfer else "⬜") + " Без самост. пересадки", "self")],
         [b(("✅" if f.exclude_night_layovers else "⬜") + " Без ночных стыковок", "night")],
+        [b(("✅" if f.self_combos else "⬜") + " 🧩 Составные маршруты (лайфхак)", "combos")],
     ]
     if ctx == "wiz":
         rows.append([b("💾 Сделать фильтрами по умолчанию", "save")])

@@ -77,6 +77,14 @@ def test_merge_normalizes_flight_number_dashes():
     assert len(merge_duplicates([a, b])) == 1
 
 
+def test_second_merge_keeps_alt_links():
+    a = offer(20000, source="kupibilet", flights=["PC5091"])
+    b = offer(21000, source="tutu", flights=["PC5091"])
+    once = merge_duplicates([a, b])
+    twice = merge_duplicates(once)
+    assert twice[0].alt_links == [("tutu", 21000, b.link)]
+
+
 def test_merge_keeps_cheapest_and_alt_links():
     a = offer(20000, source="aviasales", flights=["SU1840"])
     b = offer(19000, source="tbank", flights=["SU 1840"])

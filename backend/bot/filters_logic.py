@@ -29,6 +29,8 @@ def toggle(f: FilterSettings, field: str) -> FilterSettings:
             return f.model_copy(update={"exclude_self_transfer": not f.exclude_self_transfer})
         case "night":
             return f.model_copy(update={"exclude_night_layovers": not f.exclude_night_layovers})
+        case "combos":
+            return f.model_copy(update={"self_combos": not f.self_combos})
         case "reset":
             return FilterSettings()
     return f
