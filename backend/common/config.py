@@ -1,0 +1,37 @@
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=(".env", "../.env"), env_file_encoding="utf-8", extra="ignore")
+
+    # Telegram
+    bot_token: str = ""
+    admin_tg_ids: list[int] = []
+
+    # Travelpayouts (Aviasales Data API)
+    travelpayouts_token: str = ""
+    travelpayouts_marker: str = ""
+
+    # Хранилища. По умолчанию SQLite, чтобы запускаться без Docker.
+    database_url: str = "sqlite+aiosqlite:///./aviawatch.db"
+    redis_url: str = ""
+
+    # Глобальный прокси (переопределяется в конфиге конкретного источника)
+    http_proxy: str = ""
+
+    # Поиск
+    search_cache_ttl_s: int = 15 * 60
+    source_failure_threshold: int = 5
+    source_cooldown_min: int = 30
+
+    # Метрики Prometheus (0 — не поднимать HTTP-сервер)
+    metrics_port: int = 0
+
+    log_level: str = "INFO"
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

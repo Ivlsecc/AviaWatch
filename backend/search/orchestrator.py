@@ -1,0 +1,217 @@
+"""Оркестратор поиска: опрашивает включённые источники параллельно, кэширует,
+сохраняет историю цен, ведёт circuit breaker и отдаёт отфильтрованную выдачу."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import time
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import select
+
+from common.config import get_settings
+from common.db import session_scope
+from common.metrics import SEARCHES, SOURCE_UP
+from common.models import PriceSnapshot, SearchLog, SourceConfig
+from search.cache import Cache, dumps, make_cache
+from search.dedup import merge_duplicates
+from search.filters import FilterSettings, apply_filters
+from search.runner import RunSettings, SourceRunner, SourceRunResult
+from sources.base import FlightOffer, SearchQuery
+from sources.registry import all_sources, get_source
+
+log = logging.getLogger(__name__)
+
+# Колбэк «источник отключён»: (имя, ошибка) — для алерта админу
+SourceDownHook = Callable[[str, str], Awaitable[None]]
+
+
+@dataclass
+class SourceStatus:
+    source: str
+    ok: bool
+    offers: int
+    error: str | None = None
+    skipped: bool = False
+
+
+@dataclass
+class SearchResult:
+    query: SearchQuery
+    offers: list[FlightOffer]  # после фильтров и склейки, по возрастанию цены
+    raw_count: int
+    statuses: list[SourceStatus] = field(default_factory=list)
+    from_cache: bool = False
+
+
+def as_utc(dt: datetime | None) -> datetime | None:
+    # SQLite возвращает naive datetime — считаем его UTC
+    if dt is None or dt.tzinfo is not None:
+        return dt
+    return dt.replace(tzinfo=timezone.utc)
+
+
+async def sync_source_configs() -> None:
+    """Создаёт в БД строки конфигов для новых зарегистрированных источников."""
+    async with session_scope() as s:
+        existing = set((await s.scalars(select(SourceConfig.name))).all())
+        for name, cls in all_sources().items():
+            if name in existing:
+                continue
+            params = {"market": "ru"} if name == "aviasales_api" else {}
+            s.add(SourceConfig(name=name, params=params))
+            log.info("Добавлен конфиг источника %s (%s)", name, cls.title)
+
+
+class SearchService:
+    def __init__(self, cache: Cache | None = None, on_source_down: SourceDownHook | None = None) -> None:
+        self.settings = get_settings()
+        self.cache = cache or make_cache()
+        self.runner = SourceRunner()
+        self.on_source_down = on_source_down
+
+    async def close(self) -> None:
+        await self.runner.close()
+
+    async def search(
+        self,
+        query: SearchQuery,
+        filters: FilterSettings | None = None,
+        user_id: int | None = None,
+        use_cache: bool = True,
+    ) -> SearchResult:
+        started = time.monotonic()
+        filters = filters or FilterSettings()
+
+        raw, statuses, from_cache = None, [], False
+        if use_cache and (cached := await self.cache.get(query.cache_key())):
+            data = json.loads(cached)
+            raw = [FlightOffer.model_validate(o) for o in data["offers"]]
+            statuses = [SourceStatus(**st) for st in data["statuses"]]
+            from_cache = True
+
+        if raw is None:
+            raw, statuses = await self._collect(query)
+            await self.cache.set(
+                query.cache_key(),
+                dumps({"offers": [o.model_dump(mode="json") for o in raw], "statuses": [st.__dict__ for st in statuses]}),
+                self.settings.search_cache_ttl_s,
+            )
+            await self._save_snapshots(query, raw)
+
+        if query.direct_only:
+            filters = filters.model_copy(update={"max_transfers": 0})
+        offers = merge_duplicates(apply_filters(raw, filters))
+
+        SEARCHES.labels(query.origin, str(from_cache).lower()).inc()
+        async with session_scope() as s:
+            s.add(
+                SearchLog(
+                    user_id=user_id,
+                    origin=query.origin,
+                    destination=query.destination,
+                    date_from=query.date_from,
+                    date_to=query.date_to,
+                    results=len(offers),
+                    min_price=offers[0].price_rub if offers else None,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                    from_cache=from_cache,
+                )
+            )
+        return SearchResult(query, offers, len(raw), statuses, from_cache)
+
+    async def _collect(self, query: SearchQuery) -> tuple[list[FlightOffer], list[SourceStatus]]:
+        now = datetime.now(timezone.utc)
+        async with session_scope() as s:
+            configs = (await s.scalars(select(SourceConfig).order_by(SourceConfig.priority))).all()
+
+        registered = all_sources()
+        tasks, statuses = [], []
+        for cfg in configs:
+            if cfg.name not in registered or not cfg.enabled:
+                continue
+            if (until := as_utc(cfg.disabled_until)) and until > now:
+                statuses.append(SourceStatus(cfg.name, False, 0, "временно отключён после ошибок", skipped=True))
+                continue
+            tasks.append(self.runner.run(get_source(cfg.name), query, self._run_settings(cfg)))
+
+        results: list[SourceRunResult] = await asyncio.gather(*tasks)
+        await self._update_health(results)
+
+        offers: list[FlightOffer] = []
+        for r in results:
+            offers += r.offers
+            statuses.append(SourceStatus(r.source, r.ok, len(r.offers), r.error))
+        return offers, statuses
+
+    def _run_settings(self, cfg: SourceConfig) -> RunSettings:
+        params = dict(cfg.params or {})
+        if cfg.name == "aviasales_api":
+            params.setdefault("token", self.settings.travelpayouts_token)
+            params.setdefault("marker", self.settings.travelpayouts_marker)
+        return RunSettings(
+            timeout_s=cfg.timeout_s,
+            retries=cfg.retries,
+            rate_limit_per_min=cfg.rate_limit_per_min,
+            proxy=cfg.proxy or self.settings.http_proxy or None,
+            params=params,
+        )
+
+    async def _update_health(self, results: list[SourceRunResult]) -> None:
+        now = datetime.now(timezone.utc)
+        went_down: list[tuple[str, str]] = []
+        async with session_scope() as s:
+            for r in results:
+                cfg = await s.get(SourceConfig, r.source)
+                if cfg is None:
+                    continue
+                if r.ok:
+                    cfg.consecutive_failures = 0
+                    cfg.last_success_at = now
+                    cfg.disabled_until = None
+                    SOURCE_UP.labels(r.source).set(1)
+                    continue
+                cfg.consecutive_failures += 1
+                cfg.last_error = r.error
+                cfg.last_error_at = now
+                if cfg.consecutive_failures >= self.settings.source_failure_threshold:
+                    cfg.disabled_until = now + timedelta(minutes=self.settings.source_cooldown_min)
+                    cfg.consecutive_failures = 0
+                    SOURCE_UP.labels(r.source).set(0)
+                    went_down.append((r.source, r.error or ""))
+
+        for name, error in went_down:
+            log.error("Источник %s отключён на %d мин: %s", name, self.settings.source_cooldown_min, error)
+            if self.on_source_down:
+                try:
+                    await self.on_source_down(name, error)
+                except Exception:  # noqa: BLE001
+                    log.exception("on_source_down hook failed")
+
+    async def _save_snapshots(self, query: SearchQuery, offers: list[FlightOffer]) -> None:
+        if not offers:
+            return
+        pax = max(query.passengers, 1)
+        async with session_scope() as s:
+            s.add_all(
+                PriceSnapshot(
+                    origin=query.origin,
+                    destination=query.destination,
+                    departure_date=o.departure_date,
+                    departure_at=o.departure_at,
+                    source=o.source,
+                    # В истории храним цену за одного пассажира, чтобы сравнивать разные запросы
+                    price_rub=o.price_rub // pax,
+                    transfers=o.transfers,
+                    duration_min=o.duration_min,
+                    airline=",".join(o.airlines) or None,
+                    flight_numbers=",".join(o.flight_numbers) or None,
+                    kind="search",
+                    collected_at=o.collected_at,
+                )
+                for o in offers
+            )

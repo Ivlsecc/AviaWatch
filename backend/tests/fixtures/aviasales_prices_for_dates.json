@@ -1,0 +1,41 @@
+{
+  "success": true,
+  "currency": "rub",
+  "data": [
+    {
+      "origin": "HRG", "destination": "MOW", "origin_airport": "HRG", "destination_airport": "SVO",
+      "price": 21500, "airline": "SU", "flight_number": "1840",
+      "departure_at": "2026-11-20T13:05:00+02:00", "return_at": "", "transfers": 0, "return_transfers": 0,
+      "duration": 300, "duration_to": 300, "duration_back": 0,
+      "link": "/search/HRG2011MOW1?t=SU17636363001763654300000300HRGSVO_abc&search_date=15102026&expected_price_uuid=x&expected_price_currency=rub"
+    },
+    {
+      "origin": "HRG", "destination": "MOW", "origin_airport": "HRG", "destination_airport": "VKO",
+      "price": 18900, "airline": "ZF", "flight_number": "702",
+      "departure_at": "2026-11-21T04:30:00+02:00", "transfers": 0,
+      "duration": 290, "duration_to": 290,
+      "link": "/search/HRG2111MOW1?t=ZF_def"
+    },
+    {
+      "origin": "HRG", "destination": "MOW", "origin_airport": "HRG", "destination_airport": "SVO",
+      "price": 15200, "airline": "MS", "flight_number": "910",
+      "departure_at": "2026-11-20T09:00:00+02:00", "transfers": 2,
+      "duration": 1460, "duration_to": 1460,
+      "link": "/search/HRG2011MOW1?t=MS_ghi"
+    },
+    {
+      "origin": "HRG", "destination": "MOW", "origin_airport": "HRG", "destination_airport": "DME",
+      "price": 19700, "airline": "J2", "flight_number": "120",
+      "departure_at": "2026-11-20T22:15:00+02:00", "transfers": 1,
+      "duration": 540, "duration_to": 540,
+      "link": "/search/HRG2011MOW1?t=J2_jkl"
+    },
+    {
+      "origin": "HRG", "destination": "MOW", "origin_airport": "HRG", "destination_airport": "SVO",
+      "price": 17000, "airline": "SU", "flight_number": "1842",
+      "departure_at": "2026-12-02T13:05:00+02:00", "transfers": 0,
+      "duration": 300, "duration_to": 300,
+      "link": "/search/HRG0212MOW1?t=SU_out_of_range"
+    }
+  ]
+}

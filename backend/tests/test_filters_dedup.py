@@ -1,0 +1,67 @@
+from datetime import datetime, timedelta, timezone
+
+from search.dedup import merge_duplicates
+from search.filters import FilterSettings, apply_filters
+from sources.base import FlightOffer, Segment
+
+T0 = datetime(2026, 11, 20, 10, 0, tzinfo=timezone.utc)
+
+
+def offer(price, transfers=0, duration=300, source="a", flights=None, segments=None, dep=T0, **kw):
+    return FlightOffer(
+        source=source,
+        price_rub=price,
+        origin_airport="HRG",
+        destination_airport="SVO",
+        departure_at=dep,
+        duration_min=duration,
+        transfers=transfers,
+        flight_numbers=flights or [],
+        segments=segments or [],
+        link=f"https://example/{source}/{price}",
+        **kw,
+    )
+
+
+def seg(o, d, dep_h, arr_h):
+    return Segment(origin=o, destination=d, departure_at=T0 + timedelta(hours=dep_h), arrival_at=T0 + timedelta(hours=arr_h))
+
+
+def test_max_transfers():
+    res = apply_filters([offer(1, 0), offer(2, 1, 400), offer(3, 2, 500)], FilterSettings(max_transfers=1))
+    assert [o.price_rub for o in res] == [1, 2]
+
+
+def test_duration_factor_relative_to_fastest():
+    res = apply_filters([offer(1, duration=300), offer(2, duration=600), offer(3, duration=601)], FilterSettings())
+    assert [o.price_rub for o in res] == [1, 2]
+
+
+def test_layover_bounds_and_airport_change():
+    short = offer(1, 1, segments=[seg("HRG", "CAI", 0, 1), seg("CAI", "SVO", 1.5, 6)])
+    ok = offer(2, 1, segments=[seg("HRG", "CAI", 0, 1), seg("CAI", "SVO", 3, 8)])
+    long_ = offer(3, 1, segments=[seg("HRG", "CAI", 0, 1), seg("CAI", "SVO", 10, 14)])
+    change = offer(4, 1, segments=[seg("HRG", "IST", 0, 2), seg("SAW", "SVO", 5, 9)])
+    f = FilterSettings(max_duration_factor=None)
+    assert [o.price_rub for o in apply_filters([short, ok, long_, change], f)] == [2]
+    f2 = f.model_copy(update={"exclude_airport_change": False})
+    assert [o.price_rub for o in apply_filters([short, ok, long_, change], f2)] == [2, 4]
+
+
+def test_night_layover_and_self_transfer():
+    night = offer(1, 1, dep=T0, segments=[seg("HRG", "CAI", 12, 15), seg("CAI", "SVO", 17, 22)])
+    selfie = offer(2, self_transfer=True)
+    f = FilterSettings(exclude_night_layovers=True, max_duration_factor=None)
+    # Прибытие в CAI в 01:00 UTC (T0 10:00 + 15ч) — ночная стыковка
+    assert apply_filters([night, selfie], f) == []
+
+
+def test_merge_keeps_cheapest_and_alt_links():
+    a = offer(20000, source="aviasales", flights=["SU1840"])
+    b = offer(19000, source="tbank", flights=["SU 1840"])
+    c = offer(25000, source="yandex", flights=["SU1840"])
+    other = offer(15000, source="aviasales", flights=["ZF702"], dep=T0 + timedelta(days=1))
+    res = merge_duplicates([a, b, c, other])
+    assert [o.price_rub for o in res] == [15000, 19000]
+    assert res[1].source == "tbank"
+    assert [x[0] for x in res[1].alt_links] == ["aviasales", "yandex"]
