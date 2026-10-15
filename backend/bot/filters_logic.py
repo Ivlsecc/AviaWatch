@@ -3,7 +3,7 @@
 from search.filters import FilterSettings
 
 TRANSFERS = [0, 1, 2, 3]
-DURATION = [1.5, 2.0, 3.0, None]
+DURATION = [1.5, 2.0, 2.5, 3.0, None]
 LAYOVERS = [(60, 480), (45, 360), (120, 720), (0, 24 * 60)]
 
 

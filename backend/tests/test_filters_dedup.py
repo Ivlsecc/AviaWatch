@@ -33,7 +33,7 @@ def test_max_transfers():
 
 
 def test_duration_factor_relative_to_fastest():
-    res = apply_filters([offer(1, duration=300), offer(2, duration=600), offer(3, duration=601)], FilterSettings())
+    res = apply_filters([offer(1, duration=300), offer(2, duration=600), offer(3, duration=601)], FilterSettings(max_duration_factor=2.0))
     assert [o.price_rub for o in res] == [1, 2]
 
 
@@ -54,6 +54,21 @@ def test_night_layover_and_self_transfer():
     f = FilterSettings(exclude_night_layovers=True, max_duration_factor=None)
     # Прибытие в CAI в 01:00 UTC (T0 10:00 + 15ч) — ночная стыковка
     assert apply_filters([night, selfie], f) == []
+
+
+def test_merge_takes_details_from_richest_source():
+    # Aviasales API: только первый рейс, без сегментов, дешевле
+    api = offer(21458, transfers=1, duration=405, source="aviasales_api", flights=["PC5091"])
+    # Туту: полный маршрут, дороже
+    full = offer(21617, transfers=1, duration=775, source="tutu", flights=["PC5091", "PC1580"],
+                 segments=[seg("HRG", "AYT", 0, 1.5), seg("AYT", "SVO", 7.5, 12.9)], self_transfer=True,
+                 route_airports=["HRG", "AYT", "SVO"])
+    [m] = merge_duplicates([api, full])
+    assert m.price_rub == 21458 and m.source == "aviasales_api" and m.link == api.link
+    assert m.flight_numbers == ["PC5091", "PC1580"] and m.duration_min == 775 and len(m.segments) == 2
+    assert m.self_transfer and m.alt_links == [("tutu", 21617, full.link)]
+    # Фильтры после склейки видят раздельные билеты
+    assert apply_filters([m], FilterSettings()) == []
 
 
 def test_merge_keeps_cheapest_and_alt_links():

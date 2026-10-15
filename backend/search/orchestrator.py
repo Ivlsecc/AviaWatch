@@ -65,7 +65,7 @@ async def sync_source_configs() -> None:
             if name in existing:
                 continue
             params = {"market": "ru"} if name == "aviasales_api" else {}
-            s.add(SourceConfig(name=name, params=params))
+            s.add(SourceConfig(name=name, params=params, timeout_s=cls.default_timeout_s))
             log.info("Добавлен конфиг источника %s (%s)", name, cls.title)
 
 
@@ -107,7 +107,8 @@ class SearchService:
 
         if query.direct_only:
             filters = filters.model_copy(update={"max_transfers": 0})
-        offers = merge_duplicates(apply_filters(raw, filters))
+        # Сначала склейка: фильтры должны видеть самые подробные данные о рейсе
+        offers = apply_filters(merge_duplicates(raw), filters)
 
         SEARCHES.labels(query.origin, str(from_cache).lower()).inc()
         async with session_scope() as s:

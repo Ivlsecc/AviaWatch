@@ -84,11 +84,20 @@ class FlightOffer(BaseModel):
         return self.departure_at.date()
 
     def identity(self) -> tuple:
-        """Ключ одного и того же рейса в разных источниках."""
+        """Ключ одного и того же рейса в разных источниках.
+
+        Сравниваем только первый номер рейса: некоторые источники (Aviasales API)
+        отдают номер лишь первого сегмента. Вылет минута-в-минуту + первый рейс +
+        аэропорт прилёта + число пересадок практически однозначно задают перелёт.
+        """
         dep = self.departure_at.astimezone(timezone.utc).strftime("%Y%m%d%H%M")
-        if self.flight_numbers:
-            return (dep, tuple(f.replace(" ", "").upper() for f in self.flight_numbers))
+        first = self.flight_numbers[0].replace(" ", "").replace("-", "").upper() if self.flight_numbers else None
+        if first:
+            return (dep, first, self.destination_airport, self.transfers)
         return (dep, self.origin_airport, self.destination_airport, tuple(self.airlines), self.transfers)
+
+    def detail_score(self) -> int:
+        return len(self.segments) * 10 + len(self.flight_numbers) + len(self.route_airports)
 
     def layovers_min(self) -> list[int]:
         return [
@@ -121,6 +130,8 @@ class Source(ABC):
     # Какие параметры источник принимает в SourceConfig.params (для формы в админке)
     param_schema: ClassVar[dict[str, str]] = {}
     supports_calendar: ClassVar[bool] = False
+    # Таймаут по умолчанию для нового конфига источника (дальше меняется в админке)
+    default_timeout_s: ClassVar[float] = 20.0
 
     @abstractmethod
     async def search(self, query: SearchQuery, ctx: SourceContext) -> list[FlightOffer]:

@@ -12,7 +12,7 @@ NIGHT_HOURS = range(0, 6)
 class FilterSettings(BaseModel):
     max_transfers: int = 1
     # Не дольше чем во столько раз самого быстрого варианта в выдаче (None — без ограничения)
-    max_duration_factor: float | None = 2.0
+    max_duration_factor: float | None = 2.5
     max_duration_hours: float | None = None
     min_layover_min: int = 60
     max_layover_min: int = 8 * 60
