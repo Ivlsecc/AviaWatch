@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 
 from search.dedup import merge_duplicates
 from search.filters import FilterSettings, apply_filters
-from search.orchestrator import SearchResult, SearchService, SourceStatus
+from search.orchestrator import ProgressHook, SearchResult, SearchService, SourceStatus
 from sources.base import SearchQuery
 
 
@@ -52,10 +52,15 @@ class RouteRequest(BaseModel):
 
 
 async def search_route(
-    svc: SearchService, req: RouteRequest, filters: FilterSettings, user_id: int | None = None, use_cache: bool = True
+    svc: SearchService,
+    req: RouteRequest,
+    filters: FilterSettings,
+    user_id: int | None = None,
+    use_cache: bool = True,
+    progress: ProgressHook | None = None,
 ) -> SearchResult:
     queries = req.queries()
-    results = await asyncio.gather(*(svc.search(q, filters, user_id, use_cache) for q in queries))
+    results = await asyncio.gather(*(svc.search(q, filters, user_id, use_cache, progress=progress) for q in queries))
 
     statuses: dict[str, SourceStatus] = {}
     for r in results:

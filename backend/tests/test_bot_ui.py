@@ -89,3 +89,24 @@ def test_filter_toggles_cycle():
 def test_formatting_helpers():
     assert rub(16645) == "16 645 ₽"
     assert [plural(n, "день", "дня", "дней") for n in (1, 2, 5, 11, 21, 22)] == ["день", "дня", "дней", "дней", "день", "дня"]
+
+
+async def test_search_progress_text_and_throttle():
+    from bot.progress import SearchProgress
+
+    class Msg:
+        def __init__(self):
+            self.edits = []
+
+        async def edit_text(self, text, reply_markup=None):
+            self.edits.append(text)
+
+    m = Msg()
+    p = SearchProgress(m)
+    await p.started(3)
+    await p.finished("kupibilet", True, 400)
+    await p.finished("tutu", False, 0)  # слишком быстро после первой правки — пропускаем
+    await p.finished("aviakassa", True, 100)  # последний — показываем всегда
+    assert len(m.edits) == 2
+    assert "опрошено 3 из 3" in m.edits[-1] and "найдено 500" in m.edits[-1]
+    assert "✅ Купибилет 400" in m.edits[-1] and "⚠️ Туту" in m.edits[-1]

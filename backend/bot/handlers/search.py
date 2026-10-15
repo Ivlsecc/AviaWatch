@@ -18,6 +18,7 @@ from bot.callbacks import Cal, Flex, Flt, Menu, Pax, PlacePick, Res, Wiz
 from bot.filters_logic import toggle
 from bot.fmt import PAGE_SIZE, dates_label, filters_text, layover_label, pax_label, results_text, route_title
 from bot.states import Wizard
+from bot.progress import SearchProgress
 from bot.utils import safe_edit, show
 from common.db import session_scope
 from common.models import Subscription, User
@@ -331,16 +332,20 @@ async def render_results(
         return
     req = request_from_data(data)
     filters = FilterSettings.from_dict(data["filters"])
+    progress = None
     if target is None:
         target = cb.message
         if loading:
-            await show(cb, texts.SEARCHING)
+            target = await show(cb, texts.SEARCHING)
+            progress = SearchProgress(target)
         else:
             await cb.answer()
+    else:
+        progress = SearchProgress(target)
 
     try:
         result, stats = await asyncio.gather(
-            search_route(svc, req, filters, user.id, use_cache=use_cache),
+            search_route(svc, req, filters, user.id, use_cache=use_cache, progress=progress),
             route_price_stats(svc, req.origins, req.destinations),
         )
     except Exception:  # noqa: BLE001 — пользователь должен увидеть ответ, а не вечное «Ищу…»

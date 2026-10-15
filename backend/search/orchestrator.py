@@ -8,6 +8,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from typing import Protocol
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
@@ -30,6 +31,13 @@ CALENDAR_TTL_S = 3 * 3600
 
 # Колбэк «источник отключён»: (имя, ошибка) — для алерта админу
 SourceDownHook = Callable[[str, str], Awaitable[None]]
+
+
+class ProgressHook(Protocol):
+    """Прогресс поиска для UI: сколько источников опрашиваем и кто уже ответил."""
+
+    async def started(self, total: int) -> None: ...
+    async def finished(self, source: str, ok: bool, offers: int) -> None: ...
 
 
 @dataclass
@@ -87,6 +95,7 @@ class SearchService:
         use_cache: bool = True,
         only_sources: set[str] | None = None,
         log_search: bool = True,
+        progress: ProgressHook | None = None,
     ) -> SearchResult:
         """only_sources — опросить только эти источники (служебные поиски, например ноги составных маршрутов)."""
         started = time.monotonic()
@@ -101,7 +110,7 @@ class SearchService:
             from_cache = True
 
         if raw is None:
-            raw, statuses = await self._collect(query, only_sources)
+            raw, statuses = await self._collect(query, only_sources, progress)
             await self.cache.set(
                 cache_key,
                 dumps({"offers": [o.model_dump(mode="json") for o in raw], "statuses": [st.__dict__ for st in statuses]}),
@@ -134,7 +143,7 @@ class SearchService:
         return SearchResult(query, offers, len(raw), statuses, from_cache)
 
     async def _collect(
-        self, query: SearchQuery, only_sources: set[str] | None = None
+        self, query: SearchQuery, only_sources: set[str] | None = None, progress: ProgressHook | None = None
     ) -> tuple[list[FlightOffer], list[SourceStatus]]:
         now = datetime.now(timezone.utc)
         async with session_scope() as s:
@@ -153,8 +162,10 @@ class SearchService:
                 continue
             rs = self._run_settings(cfg)
             rs.focus_days = focus
-            tasks.append(self.runner.run(get_source(cfg.name), query, rs))
+            tasks.append(self._run_reporting(get_source(cfg.name), query, rs, progress))
 
+        if progress:
+            await _safe(progress.started(len(tasks)))
         results: list[SourceRunResult] = await asyncio.gather(*tasks)
         await self._update_health(results, f"{query.origin}-{query.destination}")
 
@@ -163,6 +174,12 @@ class SearchService:
             offers += r.offers
             statuses.append(SourceStatus(r.source, r.ok, len(r.offers), r.error))
         return offers, statuses
+
+    async def _run_reporting(self, source, query: SearchQuery, rs: RunSettings, progress: ProgressHook | None) -> SourceRunResult:
+        res = await self.runner.run(source, query, rs)
+        if progress:
+            await _safe(progress.finished(res.source, res.ok, len(res.offers)))
+        return res
 
     async def _focus_days(self, query: SearchQuery) -> list[date] | None:
         """На длинном диапазоне — самые дешёвые дни по календарю (для источников «по одному дню»)."""
@@ -292,3 +309,11 @@ class SearchService:
                 )
                 for o in offers
             )
+
+
+async def _safe(coro) -> None:
+    """UI-колбэк не должен ронять поиск."""
+    try:
+        await coro
+    except Exception:  # noqa: BLE001
+        log.exception("progress hook failed")
