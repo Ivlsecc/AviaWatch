@@ -46,11 +46,11 @@ def _passes(o: FlightOffer, f: FilterSettings) -> bool:
         return False
     if f.exclude_self_transfer and o.self_transfer:
         return False
+    if f.exclude_airport_change and o.has_airport_change():
+        return False
 
-    # Проверки стыковок — только если источник отдал сегменты
+    # Проверки длительности стыковок — только если источник отдал сегменты
     if len(o.segments) > 1:
-        if f.exclude_airport_change and o.has_airport_change():
-            return False
         for minutes in o.layovers_min():
             if minutes < f.min_layover_min or minutes > f.max_layover_min:
                 return False

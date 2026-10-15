@@ -5,7 +5,8 @@ import httpx
 import pytest
 import respx
 
-from sources.aviasales_api import API_URL, AviasalesApiSource
+from search.filters import FilterSettings, apply_filters
+from sources.aviasales_api import API_URL, AviasalesApiSource, _route_airports
 from sources.base import SearchQuery, SourceContext, SourceError
 from tests.conftest import FIXTURES
 
@@ -37,6 +38,30 @@ async def test_search_parses_and_filters_by_dates():
     assert req.headers["X-Access-Token"] == "t"
     assert req.url.params["departure_at"] == "2026-11"
     assert req.url.params["one_way"] == "true"
+
+
+@respx.mock
+async def test_airport_change_detected_from_ticket_key():
+    respx.get(API_URL).mock(return_value=httpx.Response(200, json=FIXTURE))
+    q = SearchQuery(origin="HRG", destination="MOW", date_from=date(2026, 11, 20), date_to=date(2026, 11, 25))
+    async with httpx.AsyncClient() as client:
+        offers = {o.flight_numbers[0]: o for o in await AviasalesApiSource().search(q, _ctx(client))}
+
+    assert offers["SU1840"].route_airports == ["HRG", "SVO"] and offers["SU1840"].airport_change is False
+    # 1 пересадка, но 4 аэропорта: прилёт в SAW, вылет из IST
+    assert offers["J2120"].route_airports == ["HRG", "SAW", "IST", "DME"]
+    assert offers["J2120"].has_airport_change()
+    # 2 пересадки и 4 аэропорта — смены нет
+    assert offers["MS910"].airport_change is False
+
+    kept = apply_filters(list(offers.values()), FilterSettings(max_transfers=2, max_duration_factor=None))
+    assert "J2120" not in {o.flight_numbers[0] for o in kept}
+
+
+def test_route_airports_edge_cases():
+    assert _route_airports("/search/X?t=2S17956569001795735500001250HRGSAWISTSVO_8a17&x=1") == ["HRG", "SAW", "IST", "SVO"]
+    assert _route_airports("/search/X?foo=1") == []
+    assert _route_airports("/search/X?t=SU123HRGSV_x") == []
 
 
 @respx.mock

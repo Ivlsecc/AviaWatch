@@ -68,6 +68,10 @@ class FlightOffer(BaseModel):
     # Сегменты известны не во всех источниках; без них фильтры по стыковкам пропускаются
     segments: list[Segment] = Field(default_factory=list)
 
+    # Цепочка аэропортов, если источник знает её без сегментов (например, HRG SAW IST SVO)
+    route_airports: list[str] = Field(default_factory=list)
+    airport_change: bool | None = None
+
     baggage_included: bool | None = None
     self_transfer: bool | None = None
     link: str
@@ -93,6 +97,8 @@ class FlightOffer(BaseModel):
         ]
 
     def has_airport_change(self) -> bool:
+        if self.airport_change is not None:
+            return self.airport_change
         return any(a.destination != b.origin for a, b in zip(self.segments, self.segments[1:]))
 
 

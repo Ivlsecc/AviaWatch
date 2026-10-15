@@ -1,14 +1,19 @@
 """Aviasales Data API (Travelpayouts).
 
 Официальный бесплатный API. Цены берутся из кэша поисков пользователей Aviasales
-за последние дни, поэтому могут немного отставать от живой выдачи, зато API
-стабилен и даёт календарь цен — на нём держится расчёт средней цены.
+за последние дни, поэтому могут немного отставать от живой выдачи.
+
+Проверено вживую: на запрос по месяцу API отдаёт ОДИН самый дешёвый билет на
+каждый день (не список рейсов), на запрос по дню — тоже один. Поэтому источник
+в первую очередь — календарь минимальных цен для средней и тренда, а полные
+списки рейсов дают «живые» источники.
 
 Документация: https://support.travelpayouts.com/hc/en-us/articles/203956163
 """
 
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -114,6 +119,12 @@ class AviasalesApiSource(Source):
         if marker := ctx.params.get("marker"):
             link += ("&" if "?" in link else "?") + f"marker={marker}"
 
+        transfers = int(it.get("transfers") or 0)
+        airports = _route_airports(it.get("link") or "")
+        # Без смены аэропорта в цепочке ровно transfers + 2 аэропорта (HRG IST SVO).
+        # Больше — значит прилёт и вылет из разных (HRG SAW IST SVO).
+        airport_change = len(airports) > transfers + 2 if airports else None
+
         # Цена в API — за одного взрослого. Для группы это оценка.
         total = int(price) * max(query.passengers, 1)
         return FlightOffer(
@@ -126,11 +137,32 @@ class AviasalesApiSource(Source):
             departure_at=dep,
             arrival_at=arrival,
             duration_min=duration,
-            transfers=int(it.get("transfers") or 0),
+            transfers=transfers,
             airlines=[airline] if airline else [],
             flight_numbers=flight_numbers,
+            route_airports=airports,
+            airport_change=airport_change,
             link=link,
         )
+
+
+_TICKET_RE = re.compile(r"[?&]t=([^_&]+)_")
+
+
+def _route_airports(link: str) -> list[str]:
+    """Достаёт цепочку аэропортов из ключа билета в ссылке.
+
+    t=2S17956569001795735500001250HRGSAWISTSVO_... → [HRG, SAW, IST, SVO]
+    (перевозчики, затем время/длительность цифрами, затем IATA подряд).
+    """
+    m = _TICKET_RE.search(link)
+    if not m:
+        return []
+    tail = re.search(r"\d([A-Z]+)$", m.group(1))
+    if not tail or len(tail.group(1)) % 3:
+        return []
+    letters = tail.group(1)
+    return [letters[i : i + 3] for i in range(0, len(letters), 3)]
 
 
 def _periods(date_from: date, date_to: date, prefer_month: bool = False) -> list[str]:
