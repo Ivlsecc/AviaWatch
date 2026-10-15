@@ -70,7 +70,6 @@ services:
       HTTPS_PROXY: ${APP_HTTP_PROXY:-}
       TELEGRAM_PROXY: ${TELEGRAM_PROXY:-}
       API_PORT: "8000"
-      PROMETHEUS_URL: http://prometheus:9090
     depends_on:
       migrate: { condition: service_completed_successfully }
 

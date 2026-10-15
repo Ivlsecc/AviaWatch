@@ -39,8 +39,6 @@ class Settings(BaseSettings):
     admin_password: str = ""
     jwt_secret: str = ""
     api_port: int = 8000
-    # Если задан — админка дополнительно берёт метрики из Prometheus (в Docker)
-    prometheus_url: str = ""
 
     log_level: str = "INFO"
 
