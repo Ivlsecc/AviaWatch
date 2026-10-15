@@ -14,64 +14,16 @@
 
 from __future__ import annotations
 
-import html
 import re
-import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 
-from sources.base import FlightOffer, SearchQuery, Source, SourceContext, SourceError
+from sources.base import FlightOffer, SearchQuery, Source, SourceContext
 from sources.registry import register
+from sources import telegram
+from sources.telegram import _CACHE, PAGE_URL, Post, fetch_posts, infer_day, resolve_place  # noqa: F401
 
 CHANNEL = "egyptticket"
-PAGE_URL = "https://t.me/s/{channel}"
-
-# Название в посте → (код аэропорта или города, код города)
-PLACES: dict[str, tuple[str, str]] = {
-    "ХУРГАДА": ("HRG", "HRG"),
-    "ШАРМ": ("SSH", "SSH"),
-    "ШАРМ-ЭЛЬ-ШЕЙХ": ("SSH", "SSH"),
-    "ШАРМ ЭЛЬ ШЕЙХ": ("SSH", "SSH"),
-    "КАИР": ("CAI", "CAI"),
-    "МОСКВА": ("MOW", "MOW"),
-    "ВНУКОВО": ("VKO", "MOW"),
-    "ДОМОДЕДОВО": ("DME", "MOW"),
-    "ШЕРЕМЕТЬЕВО": ("SVO", "MOW"),
-    "ЖУКОВСКИЙ": ("ZIA", "MOW"),
-    "С.ПЕТЕРБУРГ": ("LED", "LED"),
-    "САНКТ-ПЕТЕРБУРГ": ("LED", "LED"),
-    "ПЕТЕРБУРГ": ("LED", "LED"),
-    "СПБ": ("LED", "LED"),
-    "ЕКАТЕРИНБУРГ": ("SVX", "SVX"),
-    "Н.НОВГОРОД": ("GOJ", "GOJ"),
-    "НИЖНИЙ НОВГОРОД": ("GOJ", "GOJ"),
-    "САМАРА": ("KUF", "KUF"),
-    "ПЕРМЬ": ("PEE", "PEE"),
-    "ЧЕЛЯБИНСК": ("CEK", "CEK"),
-    "СОЧИ": ("AER", "AER"),
-    "КРАСНОДАР": ("KRR", "KRR"),
-    "КАЗАНЬ": ("KZN", "KZN"),
-    "ВЛАДИКАВКАЗ": ("OGZ", "OGZ"),
-    "УФА": ("UFA", "UFA"),
-    "МИН ВОДЫ": ("MRV", "MRV"),
-    "МИН.ВОДЫ": ("MRV", "MRV"),
-    "МИНЕРАЛЬНЫЕ ВОДЫ": ("MRV", "MRV"),
-    "САРАТОВ": ("GSV", "GSV"),
-    "НОВОСИБИРСК": ("OVB", "OVB"),
-    "РОСТОВ": ("ROV", "ROV"),
-    "РОСТОВ-НА-ДОНУ": ("ROV", "ROV"),
-    "ВОЛГОГРАД": ("VOG", "VOG"),
-    "ТЮМЕНЬ": ("TJM", "TJM"),
-    "ОМСК": ("OMS", "OMS"),
-    "КРАСНОЯРСК": ("KJA", "KJA"),
-    "ИРКУТСК": ("IKT", "IKT"),
-    "ВОРОНЕЖ": ("VOZ", "VOZ"),
-    "МАХАЧКАЛА": ("MCX", "MCX"),
-    "ГРОЗНЫЙ": ("GRV", "GRV"),
-    "КАЛИНИНГРАД": ("KGD", "KGD"),
-    "ОРЕНБУРГ": ("REN", "REN"),
-    "ИЖЕВСК": ("IJK", "IJK"),
-}
 
 # Города разделены дефисом С ПРОБЕЛАМИ: «ШАРМ-ЭЛЬ-ШЕЙХ - ВНУКОВО» не режется по дефису в названии
 HEADER_RE = re.compile(r"^\s*([А-ЯЁ][А-ЯЁ.\s\-]*?)\s+[-–—]\s+([А-ЯЁ][А-ЯЁ.\s\-]*?)\s*(?:/.*)?$")
@@ -79,16 +31,9 @@ FARE_RE = re.compile(r"^\s*(\d{1,2})\.(\d{1,2})\s*=\s*(\d[\d\s]*?)\s*руб(.*)$
 BAG_RE = re.compile(r"(\d+)\s*\+\s*(\d+)")
 SEATS_RE = re.compile(r"(\d+)\s*мест")
 
-# Кэш страниц канала: несколько запросов одного поиска не дёргают t.me повторно
-_CACHE: dict[str, tuple[float, list["Post"]]] = {}
-CACHE_TTL_S = 10 * 60
 
-
-@dataclass
-class Post:
-    id: int
-    posted_at: datetime
-    text: str
+def parse_channel_html(page: str, channel: str = CHANNEL) -> list[Post]:
+    return telegram.parse_channel_html(page, channel)
 
 
 @dataclass
@@ -137,58 +82,6 @@ class EgyptTicketSource(Source):
         ]
 
 
-async def fetch_posts(ctx: SourceContext, channel: str, pages: int) -> list[Post]:
-    key = f"{channel}:{pages}"
-    if (cached := _CACHE.get(key)) and time.monotonic() - cached[0] < CACHE_TTL_S:
-        return cached[1]
-    posts: dict[int, Post] = {}
-    before = None
-    for _ in range(max(pages, 1)):
-        url = PAGE_URL.format(channel=channel) + (f"?before={before}" if before else "")
-        resp = await ctx.http.get(url, timeout=ctx.timeout_s, follow_redirects=False)
-        if resp.status_code != 200:
-            raise SourceError(f"Telegram: канал {channel} недоступен (HTTP {resp.status_code})")
-        page = parse_channel_html(resp.text, channel)
-        if not page:
-            break
-        for p in page:
-            posts[p.id] = p
-        before = min(p.id for p in page)
-    result = sorted(posts.values(), key=lambda p: p.id)
-    _CACHE[key] = (time.monotonic(), result)
-    return result
-
-
-def parse_channel_html(page: str, channel: str = CHANNEL) -> list[Post]:
-    posts = []
-    for block in re.split(r'(?=<div class="tgme_widget_message_wrap)', page)[1:]:
-        pid = re.search(rf'data-post="{re.escape(channel)}/(\d+)"', block)
-        when = re.search(r'<time datetime="([^"]+)"', block)
-        body = re.search(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', block, re.S)
-        if not (pid and when and body):
-            continue
-        text = re.sub(r"<br\s*/?>", "\n", body.group(1))
-        text = html.unescape(re.sub(r"<[^>]+>", "", text))
-        posts.append(Post(int(pid.group(1)), datetime.fromisoformat(when.group(1)), text))
-    return posts
-
-
-def _place(name: str) -> tuple[str, str] | None:
-    key = re.sub(r"\s+", " ", name.strip().upper().replace("Ё", "Е"))
-    return PLACES.get(key) or PLACES.get(key.replace(" ", ""))
-
-
-def _infer_day(day: int, month: int, posted: date) -> date | None:
-    try:
-        d = date(posted.year, month, day)
-    except ValueError:
-        return None
-    # Даты в постах без года: декабрьский пост про «05.01» — это уже следующий год
-    if d < posted - timedelta(days=31):
-        d = date(posted.year + 1, month, day)
-    return d
-
-
 def parse_post(post: Post) -> list[CharterFare]:
     fares: list[CharterFare] = []
     route = None
@@ -197,12 +90,12 @@ def parse_post(post: Post) -> list[CharterFare]:
         if not line:
             continue
         if (m := HEADER_RE.match(line)) and "=" not in line:
-            a, b = _place(m.group(1)), _place(m.group(2))
+            a, b = resolve_place(m.group(1)), resolve_place(m.group(2))
             route = (a, b, m.group(1).strip().title(), m.group(2).strip().title()) if a and b else None
             continue
         if route and (m := FARE_RE.match(line)):
             (o, oc), (d, dc), oname, dname = route
-            day = _infer_day(int(m.group(1)), int(m.group(2)), post.posted_at.date())
+            day = infer_day(int(m.group(1)), int(m.group(2)), post.posted_at.date())
             if day is None:
                 continue
             rest = m.group(4)

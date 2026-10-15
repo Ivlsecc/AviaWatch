@@ -30,4 +30,5 @@ def _load_builtin() -> None:
     import sources.egyptticket  # noqa: F401
     import sources.kupibilet  # noqa: F401
     import sources.onetwotrip  # noqa: F401
+    import sources.ticket_egypt  # noqa: F401
     import sources.tutu  # noqa: F401
