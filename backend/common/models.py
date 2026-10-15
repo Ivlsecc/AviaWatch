@@ -138,6 +138,43 @@ class PriceDaily(Base):
     samples: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class SourceRunLog(Base):
+    """Каждый запрос к источнику — для графиков нагрузки, ошибок и задержек в админке."""
+
+    __tablename__ = "source_run_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"), primary_key=True)
+    source: Mapped[str] = mapped_column(String(64), index=True)
+    ok: Mapped[bool] = mapped_column(Boolean)
+    elapsed_ms: Mapped[int] = mapped_column(Integer)
+    offers: Mapped[int] = mapped_column(Integer, default=0)
+    error: Mapped[str | None] = mapped_column(Text)
+    route: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class NotificationLog(Base):
+    __tablename__ = "notification_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    subscription_id: Mapped[int | None] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(32))  # threshold | drop | digest | manual | broadcast
+    ok: Mapped[bool] = mapped_column(Boolean, default=True)
+    price: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class AppSetting(Base):
+    """Настройки, которые меняются из админки без перезапуска: тексты бота, техработы, умолчания."""
+
+    __tablename__ = "app_settings"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[dict | list | str | int | float | bool | None] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class SearchLog(Base):
     __tablename__ = "search_logs"
 

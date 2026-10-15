@@ -16,6 +16,10 @@ dependencies = [
     "aiogram>=3.10",
     "tzdata>=2024.1",
     "aiohttp-socks>=0.8",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "pyjwt>=2.8",
+    "psutil>=5.9",
 ]
 
 [project.optional-dependencies]

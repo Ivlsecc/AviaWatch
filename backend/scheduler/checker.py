@@ -10,10 +10,11 @@ from typing import Protocol
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload
 
+from common import app_settings
 from common.config import get_settings
 from common.db import session_scope
 from common.metrics import NOTIFICATIONS
-from common.models import Subscription, User
+from common.models import NotificationLog, Subscription, User
 from scheduler.rules import Decision, SubState, evaluate
 from search.analytics import route_price_stats
 from search.filters import FilterSettings
@@ -77,7 +78,8 @@ class SubscriptionChecker:
                 await roll_up_and_prune(now=now)
             except Exception:  # noqa: BLE001
                 log.exception("history maintenance failed")
-        due_before = now - timedelta(minutes=self.settings.subscription_check_minutes)
+        interval = int(await app_settings.get("subscription_check_minutes") or self.settings.subscription_check_minutes)
+        due_before = now - timedelta(minutes=interval)
         async with session_scope() as s:
             subs = (
                 await s.scalars(
@@ -152,4 +154,11 @@ class SubscriptionChecker:
                 db_sub.last_notified_at = now
                 if "digest" in decision.events:
                     db_sub.last_digest_at = now
+            if decision.send:
+                s.add(
+                    NotificationLog(
+                        user_id=sub.user_id, subscription_id=sub.id, kind=decision.events[0], ok=sent,
+                        price=result.offers[0].price_rub if result.offers else None, created_at=now,
+                    )
+                )
         return decision

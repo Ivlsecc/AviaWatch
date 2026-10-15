@@ -34,6 +34,14 @@ class Settings(BaseSettings):
     # Метрики Prometheus (0 — не поднимать HTTP-сервер)
     metrics_port: int = 0
 
+    # Веб-админка
+    admin_username: str = "admin"
+    admin_password: str = ""
+    jwt_secret: str = ""
+    api_port: int = 8000
+    # Если задан — админка дополнительно берёт метрики из Prometheus (в Docker)
+    prometheus_url: str = ""
+
     log_level: str = "INFO"
 
 

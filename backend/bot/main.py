@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
-import urllib.request
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -24,17 +23,11 @@ from bot.middlewares import UserMiddleware
 from bot.notifier import BotNotifier
 from common.config import get_settings
 from common.metrics import start_metrics_server
+from common.telegram_send import telegram_proxy
 from scheduler.checker import SubscriptionChecker
 from search.orchestrator import SearchService, sync_source_configs
 
 log = logging.getLogger("aviawatch.bot")
-
-
-def telegram_proxy(explicit: str) -> str | None:
-    if explicit:
-        return explicit
-    # aiohttp, в отличие от httpx, сам не подхватывает системный прокси Windows
-    return urllib.request.getproxies().get("https") or None
 
 
 def make_storage(redis_url: str) -> BaseStorage:

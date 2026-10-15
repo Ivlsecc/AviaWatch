@@ -14,6 +14,7 @@ from bot import texts
 from bot.callbacks import Cal, Menu
 from bot.fmt import source_title
 from bot.utils import show
+from common import app_settings
 from common.config import get_settings
 from common.db import session_scope
 from common.models import SearchLog, SourceConfig, Subscription, User
@@ -26,7 +27,12 @@ router = Router(name="start")
 async def cmd_start(message: Message, state: FSMContext) -> None:
     await state.clear()
     name = f", {escape(message.from_user.first_name)}" if message.from_user.first_name else ""
-    await message.answer(texts.WELCOME.format(name=name), reply_markup=kb.main_menu())
+    template = (await app_settings.get("welcome_text")) or texts.WELCOME
+    try:
+        text = template.format(name=name)
+    except (KeyError, IndexError, ValueError):  # в тексте из админки могут быть лишние {}
+        text = template
+    await message.answer(text, reply_markup=kb.main_menu())
 
 
 @router.message(Command("menu"))
@@ -43,12 +49,12 @@ async def cb_home(cb: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(Command("help"))
 async def cmd_help(message: Message) -> None:
-    await message.answer(texts.HELP, reply_markup=kb.home_button())
+    await message.answer((await app_settings.get("help_text")) or texts.HELP, reply_markup=kb.home_button())
 
 
 @router.callback_query(Menu.filter(F.action == "help"))
 async def cb_help(cb: CallbackQuery) -> None:
-    await show(cb, texts.HELP, kb.home_button())
+    await show(cb, (await app_settings.get("help_text")) or texts.HELP, kb.home_button())
 
 
 @router.callback_query(Cal.filter(F.action == "noop"))

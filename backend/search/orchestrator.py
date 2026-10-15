@@ -16,7 +16,7 @@ from sqlalchemy import select
 from common.config import get_settings
 from common.db import session_scope
 from common.metrics import SEARCHES, SOURCE_UP
-from common.models import PriceSnapshot, SearchLog, SourceConfig
+from common.models import PriceSnapshot, SearchLog, SourceConfig, SourceRunLog
 from search.cache import Cache, dumps, make_cache
 from search.dedup import merge_duplicates
 from search.filters import FilterSettings, apply_filters
@@ -156,7 +156,7 @@ class SearchService:
             tasks.append(self.runner.run(get_source(cfg.name), query, rs))
 
         results: list[SourceRunResult] = await asyncio.gather(*tasks)
-        await self._update_health(results)
+        await self._update_health(results, f"{query.origin}-{query.destination}")
 
         offers: list[FlightOffer] = []
         for r in results:
@@ -231,10 +231,17 @@ class SearchService:
             params=params,
         )
 
-    async def _update_health(self, results: list[SourceRunResult]) -> None:
+    async def _update_health(self, results: list[SourceRunResult], route: str | None = None) -> None:
         now = datetime.now(timezone.utc)
         went_down: list[tuple[str, str]] = []
         async with session_scope() as s:
+            s.add_all(
+                SourceRunLog(
+                    source=r.source, ok=r.ok, elapsed_ms=int(r.elapsed_s * 1000), offers=len(r.offers),
+                    error=(r.error or "")[:500] or None, route=route, created_at=now,
+                )
+                for r in results
+            )
             for r in results:
                 cfg = await s.get(SourceConfig, r.source)
                 if cfg is None:
