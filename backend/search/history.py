@@ -138,3 +138,20 @@ async def roll_up_and_prune(keep_days: int = RAW_KEEP_DAYS, now: datetime | None
     if deleted:
         log.info("История: свёрнуто %d снимков в %d дневных записей", deleted, len(agg))
     return deleted
+
+
+LOG_KEEP_DAYS = 30
+
+
+async def prune_logs(keep_days: int = LOG_KEEP_DAYS, now: datetime | None = None) -> int:
+    """Удаляет журналы запросов к источникам, поисков и уведомлений старше keep_days."""
+    from common.models import NotificationLog, SearchLog, SourceRunLog
+
+    cutoff = (now or datetime.now(timezone.utc)) - timedelta(days=keep_days)
+    total = 0
+    async with session_scope() as s:
+        for model in (SourceRunLog, SearchLog, NotificationLog):
+            total += (await s.execute(delete(model).where(model.created_at < cutoff))).rowcount or 0
+    if total:
+        log.info("Журналы: удалено %d записей старше %d дней", total, keep_days)
+    return total

@@ -89,3 +89,19 @@ async def test_roll_up_keeps_history_queryable():
 
     # Повторная свёртка ничего не ломает
     assert await roll_up_and_prune(keep_days=30, now=datetime(2026, 10, 15, tzinfo=timezone.utc)) == 0
+
+
+async def test_prune_logs_removes_only_old_rows():
+    from common.models import SearchLog, SourceRunLog
+    from search.history import prune_logs
+
+    now = datetime(2026, 10, 15, tzinfo=timezone.utc)
+    async with session_scope() as s:
+        s.add_all([
+            SourceRunLog(source="x", ok=True, elapsed_ms=1, created_at=now - timedelta(days=40)),
+            SourceRunLog(source="x", ok=True, elapsed_ms=1, created_at=now - timedelta(days=1)),
+            SearchLog(origin="HRG", destination="MOW", date_from=TODAY, date_to=TODAY, created_at=now - timedelta(days=31)),
+        ])
+    assert await prune_logs(keep_days=30, now=now) == 2
+    async with session_scope() as s:
+        assert await s.scalar(select(func.count(SourceRunLog.id))) == 1

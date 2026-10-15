@@ -19,7 +19,7 @@ from common.models import NotificationLog, Subscription, User
 from scheduler.rules import Decision, SubState, evaluate
 from search.analytics import route_price_stats
 from search.filters import FilterSettings
-from search.history import price_trend, roll_up_and_prune
+from search.history import price_trend, prune_logs, roll_up_and_prune
 from search.orchestrator import SearchResult, SearchService, as_utc
 from search.recommend import Recommendation, recommend
 from search.routes import RouteRequest, search_route
@@ -84,6 +84,7 @@ class SubscriptionChecker:
             self._last_maintenance = now
             try:
                 await roll_up_and_prune(now=now)
+                await prune_logs(now=now)
             except Exception:  # noqa: BLE001
                 log.exception("history maintenance failed")
         interval = int(await app_settings.get("subscription_check_minutes") or self.settings.subscription_check_minutes)
