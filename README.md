@@ -40,6 +40,9 @@
 | Аэрофлот, Pegasus, Air Cairo, Azur Air, Kiwi, Ozon Travel, Biletix, Travelata | ❌ | Антибот-защита (JS-challenge / Akamai / Cloudflare / Qrator / Servicepipe) |
 | Nordwind, Ural Airlines, ЮТэйр, Победа, EgyptAir, Red Wings, AJet, flydubai, Fun&Sun, Pegas | ❌ | Проверены в октябре 2026: challenge при поиске, SmartCaptcha, Qrator, Cloudflare, DDoS-Guard (Red Wings молча отдаёт пустую выдачу не-браузерам), обрыв соединения |
 | Nesma (сайт авиакомпании) | ⏸ | Открыт (Hitit Crane), но цена «from» в USD без части сборов — была бы занижена; тот же рейс есть на Туту |
+| Туроператоры: Coral, Sunmar | ⏸ | Раздел «Авиабилеты» — обычный поиск по всем авиакомпаниям (как у агрегаторов), не чартерные блоки; запросы собираются динамически — отложено |
+| Библио-Глобус | ❌ | На запрос не из браузера отвечает «Wrong request detected. For API please contact support» — нужен договор об API |
+| TEZ Tour | — | Только справочник рейсов, билеты отдельно не продаёт |
 | Anywayanyday | ⏸ | На техработах |
 
 Одинаковые рейсы с разных сайтов склеиваются в одну строку: цена и ссылка — от самого дешёвого, подробности маршрута — от самого подробного, остальные сайты — дополнительными ссылками.
