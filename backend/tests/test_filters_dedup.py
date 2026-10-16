@@ -120,3 +120,32 @@ def test_offer_line_shows_layover_wait():
 
     o = offer(1, 1, segments=[seg("SSH", "SAW", 0, 3.75), seg("SAW", "VKO", 11.25, 15.3)])
     assert transfers_label(o) == "1 пересадка (SAW 7 ч 30 мин)"
+
+
+def test_same_first_flight_different_connection_not_merged():
+    # Pegasus SSH→SAW PC637, дальше PC388 в 12:15 (14 ч 20 мин) или PC390 в 20:00 (дольше и дороже)
+    early = offer(24599, 1, duration=860, source="kupibilet", flights=["PC637", "PC388"])
+    late = offer(30100, 1, duration=1300, source="tutu", flights=["PC637", "PC390"])
+    res = merge_duplicates([early, late])
+    assert [(o.price_rub, o.duration_min) for o in res] == [(24599, 860), (30100, 1300)]
+
+
+def test_partial_offer_joins_only_unambiguous_route():
+    full = offer(25000, 1, duration=860, source="tutu", flights=["PC637", "PC388"])
+    api = offer(24000, 1, duration=225, source="aviasales_api", flights=["PC637"])
+    [m] = merge_duplicates([full, api])
+    # Цена — от дешёвого, а маршрут и время в пути — от полного варианта
+    assert m.price_rub == 24000 and m.duration_min == 860 and m.flight_numbers == ["PC637", "PC388"]
+
+    other = offer(31000, 1, duration=1300, source="kupibilet", flights=["PC637", "PC390"])
+    res = merge_duplicates([full, other, api])
+    # Два разных продолжения — неясно, к какому относится цена Aviasales: оставляем отдельно
+    assert len(res) == 3
+
+
+def test_baggage_comes_from_cheapest_fare():
+    light = offer(20000, source="kupibilet", flights=["SU429"], baggage_included=False)
+    full = offer(26000, source="tutu", flights=["SU429"], baggage_included=True,
+                 segments=[seg("SSH", "SVO", 0, 6)], route_airports=["SSH", "SVO"])
+    [m] = merge_duplicates([light, full])
+    assert m.price_rub == 20000 and m.baggage_included is False and len(m.segments) == 1

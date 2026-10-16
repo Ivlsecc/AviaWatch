@@ -31,7 +31,7 @@ async def test_search_parses_and_filters_by_dates():
     assert su.destination_airport == "SVO"
     assert su.duration_min == 300
     assert su.arrival_at is not None and (su.arrival_at - su.departure_at).seconds == 300 * 60
-    assert su.link.startswith("https://www.aviasales.ru/search/HRG2011MOW1")
+    assert su.link.startswith("https://www.aviasales.ru/search/HRG2011MOW2?")  # ссылка тоже на двоих
     assert su.link.endswith("&marker=m1")
 
     req = route.calls.last.request

@@ -29,7 +29,7 @@ def test_parse_real_response_drops_junk_fares():
     # Местное время Хургады в октябре — летнее, UTC+3
     assert first.departure_at.isoformat() == "2026-10-22T10:25:00+03:00"
     assert first.self_transfer
-    assert first.link == "https://www.onetwotrip.com/ru/f/search/2210HRGMOW?s=true"
+    assert first.link == "https://www.onetwotrip.com/ru/f/search/2210HRGMOW?s=true&sc=E&p=1_0_0"
 
 
 def test_arrival_next_day():

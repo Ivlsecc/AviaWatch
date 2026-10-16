@@ -41,16 +41,17 @@ def mark_split_prices(offers: list[FlightOffer], singles: list[FlightOffer], pax
     """Проставляет offer.split_single_rub, если на одного выходит заметно дешевле. Возвращает число таких рейсов."""
     if pax < 2:
         return 0
+    # Сравниваем строго тот же маршрут: полный список рейсов, а для неполных — первый рейс
     best: dict[tuple, int] = {}
     for s in singles:
         if s.legs_links:
             continue
-        key = s.identity()
+        key = s.full_identity() or ("loose", *s.identity())
         if key not in best or s.price_rub < best[key]:
             best[key] = s.price_rub
     marked = 0
     for o in offers:
-        single = best.get(o.identity()) if not o.legs_links else None
+        single = best.get(o.full_identity() or ("loose", *o.identity())) if not o.legs_links else None
         o.split_single_rub = single
         if split_saving(o, pax):
             marked += 1

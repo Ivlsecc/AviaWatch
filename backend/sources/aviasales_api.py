@@ -116,6 +116,9 @@ class AviasalesApiSource(Source):
             link = SITE_URL + link
         if not link:
             link = f"{SITE_URL}/search/{query.origin}{dep:%d%m}{query.destination}1"
+        # В адресе Aviasales после кода прибытия — пассажиры: взрослые, дети, младенцы (MOW2, MOW21)
+        pax = f"{query.adults}{query.children}{query.infants}" if query.children or query.infants else str(query.adults)
+        link = re.sub(r"(/search/[A-Z]{3}\d{4}[A-Z]{3})\d+", lambda m: m.group(1) + pax, link, count=1)
         if marker := ctx.params.get("marker"):
             link += ("&" if "?" in link else "?") + f"marker={marker}"
 

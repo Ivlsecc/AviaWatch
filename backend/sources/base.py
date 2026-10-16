@@ -110,6 +110,23 @@ class FlightOffer(BaseModel):
             return (dep, first, self.destination_airport, self.transfers)
         return (dep, self.origin_airport, self.destination_airport, tuple(self.airlines), self.transfers)
 
+    def norm_flights(self) -> tuple[str, ...]:
+        return tuple(re.sub(r"[\s\-–—]", "", f).upper() for f in self.flight_numbers if f)
+
+    def flights_complete(self) -> bool:
+        """Известны номера всех рейсов маршрута (а не только первого, как у Aviasales API)."""
+        return bool(self.flight_numbers) and len(self.flight_numbers) >= self.transfers + 1
+
+    def full_identity(self) -> tuple | None:
+        """Точный ключ маршрута — все рейсы по порядку. None, если источник знает не все рейсы.
+
+        С общим первым рейсом бывают разные стыковки (PC637 + PC388 в 12:15 или PC390 в 20:00):
+        их нельзя склеивать, иначе цена берётся от одного варианта, а время в пути — от другого.
+        """
+        if self.legs_links or not self.flights_complete():
+            return None
+        return (self.departure_at.strftime("%Y%m%d%H%M"), self.norm_flights(), self.destination_airport, self.transfers)
+
     def detail_score(self) -> int:
         return len(self.segments) * 10 + len(self.flight_numbers) + len(self.route_airports)
 

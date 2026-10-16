@@ -119,7 +119,7 @@ def parse_response(data: dict[str, Any], q: SearchQuery, route: str) -> list[Fli
                     route_airports=[segments[0].origin] + [s.destination for s in segments],
                     baggage_included=_has_baggage(dirs[0].get("bg")),
                     self_transfer=any(r.get("selfConnect") for r in refs),
-                    link=f"{SITE_URL}/ru/f/search/{route}?s=true",
+                    link=f"{SITE_URL}/ru/f/search/{route}?s=true&sc=E&p={q.adults}_{q.children}_{q.infants}",
                 ),
             )
         )
