@@ -33,10 +33,12 @@
 | `aviasales_api` — Aviasales (Travelpayouts Data API) | ✅ | Официальный кэш цен: одна минимальная цена на день. Используется как календарь для средней, тренда и гибких дат |
 | `egyptticket` — чартеры Egypt-Ticket | ✅ | Публичный Telegram-канал [t.me/egyptticket](https://t.me/s/egyptticket): места в чартерных блоках «только перелёт», бронь через продавца. Время вылета не указано |
 | `ticket_egypt` — горящие чартеры | ✅ | Публичный канал [t.me/ticket_egypt](https://t.me/s/ticket_egypt): самые дешёвые чартеры из выдачи Aviasales (от 4–7 тыс. ₽), цена держится часы |
+| `anex` — ANEX Tour, чартеры | ✅ | Открытый JSON `api.anextour.ru/Ticket/` (Sources → Targets → Checkins → Prices): остатки мест на чартерах туроператора «только перелёт», багаж включён. Из Египта — на ближайшие 2–4 дня. Тот же рейс бывает дешевле, чем у агрегаторов |
 | Aviasales, живой поиск | ⏳ | Сайт закрыт AWS WAF и детектит любую автоматизацию (Playwright headless и headed — 403). Обход защиты не делаем. Легальный путь — Travelpayouts Flight Search API: токен и маркер подходят, но API отвечает 403 — нужен запрос доступа в кабинете |
 | Т-Путешествия | ❌ | Сертификат «Russian Trusted Root CA» (Минцифры) — не устанавливаем |
 | Яндекс Путешествия | ❌ | SmartCaptcha — капчи не обходим |
 | Аэрофлот, Pegasus, Air Cairo, Azur Air, Kiwi, Ozon Travel, Biletix, Travelata | ❌ | Антибот-защита (JS-challenge / Akamai / Cloudflare / Qrator / Servicepipe) |
+| Nordwind, Ural Airlines, ЮТэйр, Победа, EgyptAir, Red Wings, AJet, flydubai, Fun&Sun, Pegas | ❌ | Проверены в октябре 2026: challenge при поиске, SmartCaptcha, Qrator, Cloudflare, DDoS-Guard (Red Wings молча отдаёт пустую выдачу не-браузерам), обрыв соединения |
 | Nesma (сайт авиакомпании) | ⏸ | Открыт (Hitit Crane), но цена «from» в USD без части сборов — была бы занижена; тот же рейс есть на Туту |
 | Anywayanyday | ⏸ | На техработах |
 

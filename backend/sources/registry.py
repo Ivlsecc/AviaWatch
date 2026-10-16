@@ -25,6 +25,7 @@ def get_source(name: str) -> Source:
 
 def _load_builtin() -> None:
     # Импорт модулей регистрирует источники через @register
+    import sources.anex  # noqa: F401
     import sources.aviakassa  # noqa: F401
     import sources.aviasales_api  # noqa: F401
     import sources.egyptticket  # noqa: F401
