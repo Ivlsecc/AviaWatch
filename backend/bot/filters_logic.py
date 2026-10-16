@@ -3,7 +3,8 @@
 from search.filters import FilterSettings
 
 TRANSFERS = [0, 1, 2, 3]
-DURATION = [1.5, 2.0, 2.5, 3.0, None]
+# Лимит всего времени в пути, ч; None — авто (×max_duration_factor от самого быстрого)
+DURATION_HOURS = [None, 8, 12, 16, 24]
 LAYOVERS = [(60, 480), (45, 360), (120, 720), (0, 24 * 60)]
 
 
@@ -19,7 +20,7 @@ def toggle(f: FilterSettings, field: str) -> FilterSettings:
         case "transfers":
             return f.model_copy(update={"max_transfers": _next(TRANSFERS, f.max_transfers)})
         case "duration":
-            return f.model_copy(update={"max_duration_factor": _next(DURATION, f.max_duration_factor)})
+            return f.model_copy(update={"max_duration_hours": _next(DURATION_HOURS, f.max_duration_hours)})
         case "layover":
             lo, hi = _next(LAYOVERS, (f.min_layover_min, f.max_layover_min))
             return f.model_copy(update={"min_layover_min": lo, "max_layover_min": hi})

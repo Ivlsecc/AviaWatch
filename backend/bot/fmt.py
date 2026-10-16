@@ -6,7 +6,7 @@ from datetime import date
 from html import escape
 
 from search.analytics import PriceStats
-from search.filters import FilterSettings
+from search.filters import NIGHT_HOURS, FilterSettings
 from search.flexible import FlexHint
 from search.history import Trend
 from search.recommend import Recommendation
@@ -77,8 +77,15 @@ def source_title(name: str) -> str:
 def transfers_label(o: FlightOffer) -> str:
     if o.transfers == 0:
         return "прямой"
-    via = o.route_airports[1:-1]
     word = plural(o.transfers, "пересадка", "пересадки", "пересадок")
+    if len(o.segments) > 1:
+        # Где и сколько ждать — главное, по чему решают, брать ли рейс с пересадкой
+        stops = [
+            f"{a.destination} {duration(m)}" + (" 🌙" if a.arrival_at.hour in NIGHT_HOURS else "")
+            for a, m in zip(o.segments, o.layovers_min())
+        ]
+        return f"{o.transfers} {word} ({', '.join(stops)})"
+    via = o.route_airports[1:-1]
     return f"{o.transfers} {word}" + (f" ({', '.join(via)})" if via else "")
 
 
@@ -204,8 +211,8 @@ def filters_text(f: FilterSettings) -> str:
             "Отсекают неудобные варианты: много пересадок, огромные стыковки, смену аэропорта.",
             "",
             f"• Пересадок не больше: <b>{f.max_transfers}</b>",
-            f"• Время в пути: <b>{duration_factor_label(f)}</b>",
-            f"• Стыковка: <b>{layover_label(f)}</b>",
+            f"• Время в пути (от вылета до прилёта): <b>{duration_factor_label(f)}</b>",
+            f"• Ожидание на одной пересадке: <b>{layover_label(f)}</b>",
             f"• Смена аэропорта при стыковке: <b>{'исключать' if f.exclude_airport_change else 'разрешить'}</b>",
             f"• Самостоятельная пересадка: <b>{'исключать' if f.exclude_self_transfer else 'разрешить'}</b>",
             f"• Ночные стыковки: <b>{'исключать' if f.exclude_night_layovers else 'разрешить'}</b>",
@@ -216,12 +223,14 @@ def filters_text(f: FilterSettings) -> str:
 
 
 def duration_factor_label(f: FilterSettings) -> str:
+    if f.max_duration_hours:
+        return f"всего не дольше {f.max_duration_hours:g} ч"
     if not f.max_duration_factor:
         return "без ограничений"
-    return f"не дольше ×{f.max_duration_factor:g} от самого быстрого"
+    return f"авто — не дольше ×{f.max_duration_factor:g} от самого быстрого рейса"
 
 
 def layover_label(f: FilterSettings) -> str:
     if f.min_layover_min <= 0 and f.max_layover_min >= 24 * 60:
-        return "любая"
-    return f"{f.min_layover_min / 60:g}–{f.max_layover_min / 60:g} ч"
+        return "любое"
+    return f"от {f.min_layover_min / 60:g} до {f.max_layover_min / 60:g} ч"

@@ -11,7 +11,8 @@ NIGHT_HOURS = range(0, 6)
 
 class FilterSettings(BaseModel):
     max_transfers: int = 1
-    # Не дольше чем во столько раз самого быстрого варианта в выдаче (None — без ограничения)
+    # Не дольше чем во столько раз самого быстрого варианта в выдаче (None — без ограничения).
+    # Работает, только пока пользователь не задал явный лимит в часах.
     max_duration_factor: float | None = 2.5
     max_duration_hours: float | None = None
     min_layover_min: int = 60
@@ -31,7 +32,7 @@ class FilterSettings(BaseModel):
 def apply_filters(offers: list[FlightOffer], f: FilterSettings) -> list[FlightOffer]:
     result = [o for o in offers if _passes(o, f)]
 
-    if f.max_duration_factor:
+    if f.max_duration_factor and not f.max_duration_hours:
         durations = [o.duration_min for o in result if o.duration_min]
         if durations:
             limit = min(durations) * f.max_duration_factor

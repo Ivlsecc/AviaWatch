@@ -80,7 +80,8 @@ def test_filter_toggles_cycle():
     f = FilterSettings()
     assert toggle(f, "transfers").max_transfers == 2
     assert toggle(toggle(toggle(f, "transfers"), "transfers"), "transfers").max_transfers == 0
-    assert toggle(f, "duration").max_duration_factor == 3.0
+    assert toggle(f, "duration").max_duration_hours == 8
+    assert toggle(f.model_copy(update={"max_duration_hours": 24}), "duration").max_duration_hours is None
     assert toggle(f, "airport").exclude_airport_change is False
     assert toggle(f, "layover").min_layover_min == 45
     assert toggle(f.model_copy(update={"max_transfers": 3}), "reset") == FilterSettings()

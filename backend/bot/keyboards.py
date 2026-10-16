@@ -130,8 +130,8 @@ def filters(f: FilterSettings, ctx: str) -> InlineKeyboardMarkup:
         return Btn(text=text, callback_data=Flt(field=field, ctx=ctx).pack())
 
     rows = [
-        [b(f"Пересадок ≤ {f.max_transfers}", "transfers"), b("Время в пути", "duration")],
-        [b("Длина стыковки", "layover")],
+        [b(f"Пересадок ≤ {f.max_transfers}", "transfers"), b("В пути: " + (f"≤ {f.max_duration_hours:g} ч" if f.max_duration_hours else "авто"), "duration")],
+        [b(f"Ожидание на пересадке: {f.min_layover_min / 60:g}–{f.max_layover_min / 60:g} ч", "layover")],
         [b(("✅" if f.exclude_airport_change else "⬜") + " Без смены аэропорта", "airport")],
         [b(("✅" if f.exclude_self_transfer else "⬜") + " Без самост. пересадки", "self")],
         [b(("✅" if f.exclude_night_layovers else "⬜") + " Без ночных стыковок", "night")],

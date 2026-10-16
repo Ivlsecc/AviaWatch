@@ -104,3 +104,19 @@ def test_merge_keeps_cheapest_and_alt_links():
     assert [o.price_rub for o in res] == [15000, 19000]
     assert res[1].source == "tbank"
     assert [x[0] for x in res[1].alt_links] == ["aviasales", "yandex"]
+
+
+def test_hours_limit_replaces_relative_factor():
+    # Прямой 6:20 и Pegasus через Стамбул 14:20 со стыковкой 7:30 (жалоба из теста в боте)
+    direct = offer(38846, duration=380)
+    long_ = offer(24599, 1, duration=860, segments=[seg("SSH", "SAW", 0, 3.75), seg("SAW", "VKO", 11.25, 15.3)])
+    assert [o.price_rub for o in apply_filters([long_, direct], FilterSettings())] == [24599, 38846]
+    f = FilterSettings(max_duration_hours=8)
+    assert [o.price_rub for o in apply_filters([long_, direct], f)] == [38846]
+
+
+def test_offer_line_shows_layover_wait():
+    from bot.fmt import transfers_label
+
+    o = offer(1, 1, segments=[seg("SSH", "SAW", 0, 3.75), seg("SAW", "VKO", 11.25, 15.3)])
+    assert transfers_label(o) == "1 пересадка (SAW 7 ч 30 мин)"
