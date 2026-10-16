@@ -1,8 +1,7 @@
-import { Plane } from 'lucide-react'
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { api, setToken } from '../api'
-import { Button, ErrorBox, Field, Input } from '../components/ui'
+import { Button, ErrorBox, Field, Input, Mark } from '../components/ui'
 
 export default function Login({ onLogin }: { onLogin: () => void }) {
   const [username, setUsername] = useState('admin')
@@ -27,27 +26,26 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
 
   return (
     <div className="grid min-h-full place-items-center px-4">
-      <form onSubmit={submit} className="w-full max-w-sm space-y-4 rounded-2xl border border-line bg-panel p-6">
-        <div className="flex items-center gap-3">
-          <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent text-slate-900">
-            <Plane size={20} />
-          </span>
-          <div>
-            <div className="text-lg font-semibold">AviaWatch</div>
-            <div className="text-xs text-muted">Панель администратора</div>
-          </div>
+      <div className="w-full max-w-[340px]">
+        <div className="mb-8 flex items-center gap-2.5">
+          <Mark size={24} />
+          <span className="text-[15px] font-semibold tracking-tight">AviaWatch</span>
         </div>
-        <Field label="Логин">
-          <Input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
-        </Field>
-        <Field label="Пароль">
-          <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" autoFocus />
-        </Field>
-        <ErrorBox error={error} />
-        <Button type="submit" className="w-full" disabled={busy || !password}>
-          {busy ? 'Входим…' : 'Войти'}
-        </Button>
-      </form>
+        <h1 className="text-[22px] font-semibold">Вход в панель</h1>
+        <p className="mt-1 mb-6 text-[13px] text-muted">Источники цен, пользователи и настройки бота.</p>
+        <form onSubmit={submit} className="space-y-4">
+          <Field label="Логин">
+            <Input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" className="h-9" />
+          </Field>
+          <Field label="Пароль">
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" autoFocus className="h-9" />
+          </Field>
+          <ErrorBox error={error} />
+          <Button type="submit" className="h-9 w-full" disabled={busy || !password}>
+            {busy ? 'Входим…' : 'Войти'}
+          </Button>
+        </form>
+      </div>
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from '../api'
-import { Card, Empty, ErrorBox, Select, cx, fmtTime, rub, useApi } from '../components/ui'
+import { Card, Empty, ErrorBox, Page, PageHeader, Select, TABLE, cx, fmtTime, rub, useApi } from '../components/ui'
 
 type ErrorRow = { source: string; error: string | null; route: string | null; ms: number; at: string }
 type SearchRow = { route: string; dates: string; results: number; min_price: number | null; ms: number; cached: boolean; at: string; user: string }
@@ -12,54 +12,82 @@ export default function Logs() {
   const names = [...new Set((errors.data ?? []).map((e) => e.source))]
 
   return (
-    <div className="space-y-4 p-4 md:p-6">
-      <header>
-        <h1 className="text-xl font-semibold">Логи</h1>
-        <p className="text-sm text-muted">Ошибки источников и последние поиски пользователей.</p>
-      </header>
+    <Page>
+      <PageHeader title="Журнал" description="Последние поиски пользователей и ошибки источников." />
       <ErrorBox error={errors.error || searches.error} />
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid items-start gap-6 xl:grid-cols-[1.4fr_1fr]">
+        <Card title="Поиски" flush>
+          {searches.data?.length === 0 ? (
+            <Empty>Поисков ещё не было</Empty>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className={TABLE.table}>
+                <thead className={TABLE.head}>
+                  <tr>
+                    <th>Когда</th>
+                    <th>Кто</th>
+                    <th>Маршрут</th>
+                    <th className="text-right">Вариантов</th>
+                    <th className="text-right">Минимум</th>
+                    <th className="text-right">Время</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(searches.data ?? []).map((s, i) => (
+                    <tr key={i} className={TABLE.row}>
+                      <td className="font-mono text-[12px] whitespace-nowrap text-muted">{fmtTime(s.at)}</td>
+                      <td className="max-w-32 truncate text-[12px] text-muted">{s.user}</td>
+                      <td>
+                        <div className="font-medium whitespace-nowrap">{s.route}</div>
+                        <div className="text-[12px] whitespace-nowrap text-faint">{s.dates}</div>
+                      </td>
+                      <td className="text-right tabular-nums">{s.results}</td>
+                      <td className="text-right whitespace-nowrap tabular-nums">{rub(s.min_price)}</td>
+                      <td className={cx('text-right font-mono text-[12px] whitespace-nowrap', s.cached ? 'text-faint' : 'text-muted')}>
+                        {s.cached ? 'кэш' : `${(s.ms / 1000).toFixed(1)} с`}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+
         <Card
           title="Ошибки источников"
+          flush
           actions={
-            <Select value={source} onChange={(e) => setSource(e.target.value)} className="w-44">
+            <Select value={source} onChange={(e) => setSource(e.target.value)} className="h-7 w-40 text-[12px]">
               <option value="">Все источники</option>
-              {names.map((n) => <option key={n} value={n}>{n}</option>)}
+              {names.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
             </Select>
           }
         >
-          {errors.data?.length === 0 && <Empty>Ошибок нет 🎉</Empty>}
-          <div className="space-y-2">
-            {(errors.data ?? []).map((e, i) => (
-              <div key={i} className="rounded-lg border border-line px-3 py-2 text-xs">
-                <div className="flex justify-between gap-2">
-                  <span className="font-medium text-bad">{e.source}</span>
-                  <span className="text-muted">{fmtTime(e.at)} · {e.route ?? '—'} · {(e.ms / 1000).toFixed(1)} с</span>
+          {errors.data?.length === 0 ? (
+            <Empty>Ошибок нет</Empty>
+          ) : (
+            <div className="divide-y divide-line">
+              {(errors.data ?? []).map((e, i) => (
+                <div key={i} className="px-5 py-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="font-mono text-[12px] font-medium text-bad">{e.source}</span>
+                    <span className="font-mono text-[11px] whitespace-nowrap text-faint">
+                      {fmtTime(e.at)} · {(e.ms / 1000).toFixed(1)} с
+                    </span>
+                  </div>
+                  {e.route && <div className="mt-0.5 text-[12px] text-muted">{e.route}</div>}
+                  <div className="mt-1 text-[12px] leading-relaxed break-words text-muted">{e.error}</div>
                 </div>
-                <div className="mt-1 break-words text-muted">{e.error}</div>
-              </div>
-            ))}
-          </div>
-        </Card>
-        <Card title="Поиски">
-          {searches.data?.length === 0 && <Empty>Поисков ещё не было</Empty>}
-          <table className="w-full text-xs">
-            <tbody>
-              {(searches.data ?? []).map((s, i) => (
-                <tr key={i} className="border-b border-line/60 last:border-0">
-                  <td className="py-1.5 pr-2 text-muted">{fmtTime(s.at)}</td>
-                  <td className="py-1.5 pr-2">{s.user}</td>
-                  <td className="py-1.5 pr-2 font-medium">{s.route}</td>
-                  <td className="py-1.5 pr-2 text-muted">{s.dates}</td>
-                  <td className="py-1.5 pr-2 text-right">{s.results}</td>
-                  <td className="py-1.5 pr-2 text-right">{rub(s.min_price)}</td>
-                  <td className={cx('py-1.5 text-right', s.cached ? 'text-muted' : '')}>{s.cached ? 'кэш' : `${(s.ms / 1000).toFixed(1)} с`}</td>
-                </tr>
               ))}
-            </tbody>
-          </table>
+            </div>
+          )}
         </Card>
       </div>
-    </div>
+    </Page>
   )
 }

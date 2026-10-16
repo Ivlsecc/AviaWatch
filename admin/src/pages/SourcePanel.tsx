@@ -1,8 +1,8 @@
-import { ExternalLink, FlaskConical, RotateCcw, X } from 'lucide-react'
+import { ArrowUpRight, FlaskConical, RotateCcw, X } from 'lucide-react'
 import { useState } from 'react'
 import type { AppSettings, SourceInfo, TestResult } from '../api'
 import { api } from '../api'
-import { Button, Card, ErrorBox, Field, Input, Select, StatusBadge, Toggle, ago, rub } from '../components/ui'
+import { Button, CodeArea, ErrorBox, Field, Input, Notice, Section, Select, StatusBadge, Toggle, ago, rub } from '../components/ui'
 
 function tomorrowPlus(days: number) {
   const d = new Date()
@@ -88,40 +88,51 @@ export default function SourcePanel({
 
   const s = source.stats_24h
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <div className="text-lg font-semibold">{source.title}</div>
-          <div className="flex items-center gap-2 text-xs text-muted">
-            <span>{source.name}</span>
+    <div>
+      <div className="flex items-start justify-between gap-2 border-b border-line px-5 py-5">
+        <div className="min-w-0">
+          <div className="text-[16px] font-semibold tracking-tight">{source.title}</div>
+          <div className="mt-1 flex items-center gap-3">
+            <span className="font-mono text-[11px] text-faint">{source.name}</span>
             <StatusBadge status={source.status} />
           </div>
         </div>
-        <button onClick={onClose} className="rounded p-1 text-muted hover:bg-panel-2 hover:text-ink" title="Закрыть">
-          <X size={18} />
-        </button>
+        <Button variant="quiet" size="sm" onClick={onClose} title="Закрыть">
+          <X size={15} />
+        </Button>
       </div>
 
-      <div className="grid grid-cols-3 gap-2 text-center text-xs">
-        <div className="rounded-lg bg-panel-2 p-2"><div className="text-muted">запросов</div><div className="text-base font-semibold">{s.requests}</div></div>
-        <div className="rounded-lg bg-panel-2 p-2"><div className="text-muted">ошибок</div><div className="text-base font-semibold">{Math.round(s.error_rate * 100)}%</div></div>
-        <div className="rounded-lg bg-panel-2 p-2"><div className="text-muted">p95</div><div className="text-base font-semibold">{(s.latency_p95_ms / 1000).toFixed(1)} с</div></div>
+      <div className="grid grid-cols-3 gap-px border-b border-line bg-line">
+        {[
+          ['запросов за сутки', String(s.requests)],
+          ['с ошибкой', `${Math.round(s.error_rate * 100)}%`],
+          ['ответ, p95', s.requests ? `${(s.latency_p95_ms / 1000).toFixed(1)} с` : '—'],
+        ].map(([label, value]) => (
+          <div key={label} className="bg-panel px-5 py-3">
+            <div className="text-[18px] font-medium tabular-nums">{value}</div>
+            <div className="text-[11px] text-faint">{label}</div>
+          </div>
+        ))}
       </div>
 
       {(source.status === 'down' || source.consecutive_failures > 0) && (
-        <div className="rounded-lg border border-warn/40 bg-warn/10 p-3 text-sm">
-          <div className="font-medium text-warn">
-            {source.status === 'down' ? `Отключён до ${new Date(source.disabled_until!).toLocaleTimeString('ru-RU')}` : `Ошибок подряд: ${source.consecutive_failures}`}
-          </div>
-          {source.last_error && <div className="mt-1 break-words text-xs text-muted">{ago(source.last_error_at)}: {source.last_error}</div>}
-          <Button variant="ghost" className="mt-2" onClick={reset}><RotateCcw size={14} /> Сбросить и включить</Button>
+        <div className="border-b border-line px-5 py-4">
+          <Notice>
+            <div className="font-medium text-warn">
+              {source.status === 'down' ? `Отключён до ${new Date(source.disabled_until!).toLocaleTimeString('ru-RU')}` : `Ошибок подряд: ${source.consecutive_failures}`}
+            </div>
+            {source.last_error && <div className="mt-1 text-[12px] break-words text-muted">{ago(source.last_error_at)}: {source.last_error}</div>}
+            <Button variant="ghost" size="sm" className="mt-2.5" onClick={reset}>
+              <RotateCcw size={13} /> Сбросить и включить
+            </Button>
+          </Notice>
         </div>
       )}
 
-      <Card title="Настройки">
-        <div className="space-y-3">
-          <Toggle checked={form.enabled} onChange={(v) => setForm({ ...form, enabled: v })} label={form.enabled ? 'Включён' : 'Выключен'} />
-          <div className="grid grid-cols-2 gap-3">
+      <Section title="Настройки">
+        <div className="space-y-4">
+          <Toggle checked={form.enabled} onChange={(v) => setForm({ ...form, enabled: v })} label={form.enabled ? 'Участвует в поиске' : 'Выключен'} />
+          <div className="grid grid-cols-2 gap-x-3 gap-y-4">
             <Field label="Приоритет" hint="меньше — раньше">
               <Input type="number" value={form.priority} onChange={(e) => setForm({ ...form, priority: Number(e.target.value) })} />
             </Field>
@@ -139,63 +150,76 @@ export default function SourcePanel({
             <Select value={proxyKnown ? form.proxy : '__custom'} onChange={(e) => setForm({ ...form, proxy: e.target.value === '__custom' ? 'http://' : e.target.value })}>
               <option value="">Глобальный (из .env / системный)</option>
               <option value="direct">Напрямую, мимо системного прокси</option>
-              {pools.map((p) => <option key={p.name} value={p.url}>Пул: {p.name}</option>)}
-              <option value="__custom">Свой URL…</option>
+              {pools.map((p) => (
+                <option key={p.name} value={p.url}>
+                  Пул: {p.name}
+                </option>
+              ))}
+              <option value="__custom">Свой адрес…</option>
             </Select>
           </Field>
-          {!proxyKnown && (
-            <Input value={form.proxy} onChange={(e) => setForm({ ...form, proxy: e.target.value })} placeholder="socks5://user:pass@host:1080" />
-          )}
-          <Field label="Параметры (JSON)" hint={Object.entries(source.param_schema).map(([k, v]) => `${k} — ${v}`).join('; ') || 'у источника нет параметров'}>
-            <textarea
-              value={form.params}
-              onChange={(e) => setForm({ ...form, params: e.target.value })}
-              rows={4}
-              className="w-full rounded-lg border border-line bg-bg px-3 py-2 font-mono text-xs outline-none focus:border-accent"
-            />
+          {!proxyKnown && <Input value={form.proxy} onChange={(e) => setForm({ ...form, proxy: e.target.value })} placeholder="socks5://user:pass@host:1080" className="font-mono" />}
+          <Field
+            label="Параметры, JSON"
+            hint={
+              Object.entries(source.param_schema)
+                .map(([k, v]) => `${k} — ${v}`)
+                .join('; ') || 'У источника нет параметров'
+            }
+          >
+            <CodeArea value={form.params} onChange={(e) => setForm({ ...form, params: e.target.value })} rows={4} />
           </Field>
           <div className="flex items-center gap-3">
-            <Button onClick={save} disabled={saving}>{saving ? 'Сохраняю…' : 'Сохранить'}</Button>
-            {saved && <span className="text-sm text-ok">Сохранено, применяется сразу</span>}
+            <Button onClick={save} disabled={saving}>
+              {saving ? 'Сохраняю…' : 'Сохранить'}
+            </Button>
+            {saved && <span className="text-[12px] text-muted">Сохранено, применяется сразу</span>}
           </div>
         </div>
-      </Card>
+      </Section>
 
-      <Card title="Тестовый запрос">
+      <Section title="Проверка">
         <div className="space-y-3">
-          <div className="grid grid-cols-3 gap-2">
-            <Field label="Откуда"><Input value={test.origin} onChange={(e) => setTest({ ...test, origin: e.target.value.toUpperCase() })} maxLength={3} /></Field>
-            <Field label="Куда"><Input value={test.destination} onChange={(e) => setTest({ ...test, destination: e.target.value.toUpperCase() })} maxLength={3} /></Field>
-            <Field label="Дата"><Input type="date" value={test.date} onChange={(e) => setTest({ ...test, date: e.target.value })} /></Field>
+          <div className="grid grid-cols-[1fr_1fr_1.6fr] gap-2">
+            <Field label="Откуда">
+              <Input value={test.origin} onChange={(e) => setTest({ ...test, origin: e.target.value.toUpperCase() })} maxLength={3} className="font-mono" />
+            </Field>
+            <Field label="Куда">
+              <Input value={test.destination} onChange={(e) => setTest({ ...test, destination: e.target.value.toUpperCase() })} maxLength={3} className="font-mono" />
+            </Field>
+            <Field label="Дата">
+              <Input type="date" value={test.date} onChange={(e) => setTest({ ...test, date: e.target.value })} />
+            </Field>
           </div>
           <Button variant="ghost" onClick={runTest} disabled={testing}>
-            <FlaskConical size={14} /> {testing ? 'Запрашиваю…' : 'Тест'}
+            <FlaskConical size={14} strokeWidth={1.75} /> {testing ? 'Запрашиваю…' : 'Проверить'}
           </Button>
           {result && (
-            <div className="space-y-2">
-              <div className={result.ok ? 'text-sm text-ok' : 'text-sm text-bad'}>
-                {result.ok ? `OK: ${result.offers} вариантов за ${result.elapsed_s} с` : `Ошибка за ${result.elapsed_s} с: ${result.error}`}
+            <div className="space-y-2 pt-1">
+              <div className={result.ok ? 'text-[13px] text-ok' : 'text-[13px] text-bad'}>
+                {result.ok ? `${result.offers} вариантов за ${result.elapsed_s} с` : `Ошибка за ${result.elapsed_s} с: ${result.error}`}
               </div>
-              {result.sample.map((o, i) => (
-                <div key={i} className="rounded-lg border border-line px-3 py-2 text-xs">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold">{rub(o.price_rub)}</span>
-                    <a href={o.link} target="_blank" rel="noreferrer" className="text-accent hover:underline" title="Открыть">
-                      <ExternalLink size={13} />
-                    </a>
-                  </div>
-                  <div className="text-muted">
-                    {new Date(o.departure_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', ...(o.time_known ? { hour: '2-digit', minute: '2-digit' } : {}) })} · {o.route} · {o.flights.join(', ') || '—'}
-                    {o.self_transfer ? ' · самост. пересадка' : ''}
-                  </div>
-                  {o.note && <div className="text-muted/80">{o.note}</div>}
-                </div>
-              ))}
+              <div className="divide-y divide-line rounded-lg border border-line">
+                {result.sample.map((o, i) => (
+                  <a key={i} href={o.link} target="_blank" rel="noreferrer" className="group block px-3 py-2 transition-colors hover:bg-panel-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[13px] font-medium tabular-nums">{rub(o.price_rub)}</span>
+                      <ArrowUpRight size={13} className="text-faint group-hover:text-ink" />
+                    </div>
+                    <div className="text-[12px] text-muted">
+                      {new Date(o.departure_at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', ...(o.time_known ? { hour: '2-digit', minute: '2-digit' } : {}) })} · {o.route} ·{' '}
+                      <span className="font-mono text-[11px]">{o.flights.join(', ') || '—'}</span>
+                      {o.self_transfer ? ' · самост. пересадка' : ''}
+                    </div>
+                    {o.note && <div className="text-[12px] text-faint">{o.note}</div>}
+                  </a>
+                ))}
+              </div>
             </div>
           )}
+          <ErrorBox error={error} />
         </div>
-      </Card>
-      <ErrorBox error={error} />
+      </Section>
     </div>
   )
 }

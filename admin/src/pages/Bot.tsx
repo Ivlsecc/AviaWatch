@@ -1,10 +1,24 @@
 import { Send } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { AppSettings } from '../api'
 import { api } from '../api'
-import { Button, Card, ErrorBox, Field, Input, Textarea, Toggle, useApi } from '../components/ui'
+import { Button, Card, CodeArea, ErrorBox, Field, Input, Page, PageHeader, Textarea, Toggle, useApi } from '../components/ui'
 
 type Job = { id: string; total: number; sent: number; failed: number; done: boolean; dry_run: boolean; errors: { tg_id: number; error: string }[] }
+
+/** Строка настроек: слева что это и зачем, справа поля. */
+function Row({ title, text, children }: { title: string; text?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="grid gap-4 border-b border-line px-5 py-5 last:border-0 md:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)] md:gap-10">
+      <div>
+        <div className="text-[13px] font-medium">{title}</div>
+        {text && <p className="mt-1 text-[12px] leading-relaxed text-muted">{text}</p>}
+      </div>
+      <div className="min-w-0 space-y-4">{children}</div>
+    </div>
+  )
+}
 
 export default function BotPage() {
   const settings = useApi(() => api<AppSettings>('/api/settings'), [])
@@ -43,57 +57,54 @@ export default function BotPage() {
   }
 
   return (
-    <div className="space-y-4 p-4 md:p-6">
-      <header>
-        <h1 className="text-xl font-semibold">Бот</h1>
-        <p className="text-sm text-muted">Тексты, режим техработ и умолчания. Бот подхватывает изменения в течение 15 секунд, перезапуск не нужен.</p>
-      </header>
+    <Page>
+      <PageHeader
+        title="Бот"
+        description="Тексты, техработы и настройки для новых пользователей. Бот подхватывает изменения за 15 секунд, перезапуск не нужен."
+        actions={
+          <>
+            {saved && <span className="text-[12px] text-muted">Сохранено</span>}
+            <Button onClick={save} disabled={!form}>
+              Сохранить
+            </Button>
+          </>
+        }
+      />
       <ErrorBox error={error || settings.error} />
       {form && (
-        <div className="grid gap-4 xl:grid-cols-2">
-          <Card title="Режим работы">
-            <div className="space-y-3">
-              <Toggle checked={form.maintenance} onChange={(v) => setForm({ ...form, maintenance: v })} label={form.maintenance ? 'Техработы: бот отвечает только админам' : 'Бот работает для всех'} />
-              <Field label="Текст во время техработ">
-                <Textarea rows={2} value={form.maintenance_text} onChange={(e) => setForm({ ...form, maintenance_text: e.target.value })} />
-              </Field>
+        <>
+          <Card flush>
+            <Row title="Техработы" text="Пока включено, бот отвечает только администраторам, остальным — текстом ниже.">
+              <Toggle checked={form.maintenance} onChange={(v) => setForm({ ...form, maintenance: v })} label={form.maintenance ? 'Идут техработы' : 'Бот открыт для всех'} />
+              <Textarea rows={2} value={form.maintenance_text} onChange={(e) => setForm({ ...form, maintenance_text: e.target.value })} />
+            </Row>
+            <Row title="Подписки" text="Как часто бот перепроверяет цены по подпискам и сколько подписок можно новому пользователю.">
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Проверять подписки раз в, мин">
+                <Field label="Проверять раз в, мин">
                   <Input type="number" min={5} value={form.subscription_check_minutes} onChange={(e) => setForm({ ...form, subscription_check_minutes: Number(e.target.value) })} />
                 </Field>
-                <Field label="Лимит подписок для новых">
+                <Field label="Лимит для новых">
                   <Input type="number" min={0} value={form.default_max_subscriptions} onChange={(e) => setForm({ ...form, default_max_subscriptions: Number(e.target.value) })} />
                 </Field>
               </div>
-              <Field label="Фильтры по умолчанию для новых (JSON)" hint='например {"max_transfers": 1, "self_combos": true}'>
-                <textarea
-                  rows={4}
-                  value={filtersJson}
-                  onChange={(e) => setFiltersJson(e.target.value)}
-                  className="w-full rounded-lg border border-line bg-bg px-3 py-2 font-mono text-xs outline-none focus:border-accent"
-                />
-              </Field>
-            </div>
+            </Row>
+            <Row title="Фильтры по умолчанию" text={<>Применяются к новым пользователям. Например <code className="font-mono text-[11px]">{'{"max_transfers": 1}'}</code>.</>}>
+              <CodeArea rows={4} value={filtersJson} onChange={(e) => setFiltersJson(e.target.value)} />
+            </Row>
           </Card>
 
-          <Card title="Тексты">
-            <div className="space-y-3">
-              <Field label="Приветствие (/start)" hint="Пусто — встроенный текст. {name} подставит имя. Разметка HTML Telegram.">
-                <Textarea rows={6} value={form.welcome_text} onChange={(e) => setForm({ ...form, welcome_text: e.target.value })} placeholder="✈️ <b>Привет{name}!</b> …" />
-              </Field>
-              <Field label="Справка (/help)" hint="Пусто — встроенный текст">
-                <Textarea rows={6} value={form.help_text} onChange={(e) => setForm({ ...form, help_text: e.target.value })} />
-              </Field>
-            </div>
+          <Card flush>
+            <Row title="Приветствие" text="Ответ на /start. Пусто — встроенный текст. {name} подставит имя, разметка — HTML Telegram.">
+              <Textarea rows={6} value={form.welcome_text} onChange={(e) => setForm({ ...form, welcome_text: e.target.value })} placeholder="✈️ <b>Привет{name}!</b> …" />
+            </Row>
+            <Row title="Справка" text="Ответ на /help. Пусто — встроенный текст.">
+              <Textarea rows={6} value={form.help_text} onChange={(e) => setForm({ ...form, help_text: e.target.value })} />
+            </Row>
           </Card>
-        </div>
+        </>
       )}
-      <div className="flex items-center gap-3">
-        <Button onClick={save} disabled={!form}>Сохранить настройки</Button>
-        {saved && <span className="text-sm text-ok">Сохранено</span>}
-      </div>
       <Broadcast />
-    </div>
+    </Page>
   )
 }
 
@@ -126,38 +137,45 @@ function Broadcast() {
   }
 
   return (
-    <Card title="Рассылка">
-      <div className="space-y-3">
-        <Field label="Сообщение" hint="HTML Telegram: <b>, <i>, <a href>. До 4000 символов.">
-          <Textarea rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="Добавили новый источник — чартеры из Telegram! 🎉" />
+    <Card flush>
+      <Row title="Рассылка" text="Сообщение всем незаблокированным пользователям. HTML Telegram, до 4000 символов. Сначала проверьте, сколько человек его получат.">
+        <Textarea rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder="Добавили новый источник цен…" />
+        <Field label="Только заходившим за последние N дней" hint="Пусто — всем">
+          <Input type="number" min={1} value={days} onChange={(e) => setDays(e.target.value)} className="w-32" />
         </Field>
-        <Field label="Только тем, кто заходил за последние N дней" hint="Пусто — всем незаблокированным">
-          <Input type="number" min={1} value={days} onChange={(e) => setDays(e.target.value)} className="w-40" />
-        </Field>
-        <div className="flex gap-2">
-          <Button variant="ghost" onClick={() => start(true)} disabled={!text.trim()}>Сколько получат?</Button>
-          <Button onClick={() => start(false)} disabled={!text.trim() || (job != null && !job.done)}>
-            <Send size={14} /> Отправить
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="ghost" onClick={() => start(true)} disabled={!text.trim()}>
+            Сколько получат?
           </Button>
+          <Button onClick={() => start(false)} disabled={!text.trim() || (job != null && !job.done)}>
+            <Send size={13} strokeWidth={1.75} /> Отправить
+          </Button>
+          {job && (
+            <span className="text-[13px] text-muted">
+              {job.dry_run ? (
+                <>
+                  Получат: <b className="font-medium text-ink tabular-nums">{job.total}</b>
+                </>
+              ) : (
+                <>
+                  {job.done ? 'Готово' : 'Отправляю…'} {job.sent} из {job.total}
+                  {job.failed ? `, ошибок ${job.failed}` : ''}
+                </>
+              )}
+            </span>
+          )}
         </div>
-        <ErrorBox error={error} />
-        {job && (
-          <div className="rounded-lg border border-line p-3 text-sm">
-            {job.dry_run ? (
-              <span>Получат: <b>{job.total}</b></span>
-            ) : (
-              <span>
-                {job.done ? 'Готово' : 'Отправляю…'} — отправлено {job.sent} из {job.total}, ошибок {job.failed}
-              </span>
-            )}
-            {job.errors.length > 0 && (
-              <ul className="mt-2 space-y-1 text-xs text-muted">
-                {job.errors.map((e, i) => <li key={i}>{e.tg_id}: {e.error}</li>)}
-              </ul>
-            )}
-          </div>
+        {job && job.errors.length > 0 && (
+          <ul className="space-y-1 font-mono text-[11px] text-muted">
+            {job.errors.map((e, i) => (
+              <li key={i}>
+                {e.tg_id}: {e.error}
+              </li>
+            ))}
+          </ul>
         )}
-      </div>
+        <ErrorBox error={error} />
+      </Row>
     </Card>
   )
 }

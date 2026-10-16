@@ -2,7 +2,15 @@ import { Ban, Search, Trash2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { UserDetail, UserRow } from '../api'
 import { api } from '../api'
-import { Button, Card, Empty, ErrorBox, Input, Toggle, ago, cx, fmtTime, rub, useApi } from '../components/ui'
+import { Button, Card, Dot, Empty, ErrorBox, Input, Page, PageHeader, Section, TABLE, Toggle, ago, cx, fmtTime, rub, useApi } from '../components/ui'
+
+function Avatar({ name }: { name: string }) {
+  return (
+    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-panel-2 text-[12px] font-medium text-muted">
+      {(name.trim()[0] ?? '?').toUpperCase()}
+    </span>
+  )
+}
 
 export default function UsersPage() {
   const [q, setQ] = useState('')
@@ -22,66 +30,87 @@ export default function UsersPage() {
   const total = list.data?.total ?? 0
   return (
     <div className="flex h-full">
-      <div className="min-w-0 flex-1 space-y-4 overflow-y-auto p-4 md:p-6">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-semibold">Пользователи</h1>
-            <p className="text-sm text-muted">Всего: {total}. Нажмите на пользователя, чтобы увидеть его подписки и поиски.</p>
-          </div>
-          <div className="relative w-72">
-            <Search size={14} className="absolute top-2.5 left-3 text-muted" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Имя, @username или Telegram ID" className="pl-8" />
-          </div>
-        </header>
-        <ErrorBox error={list.error} />
-        <Card>
-          {list.data && list.data.items.length === 0 ? (
-            <Empty>Никого не нашлось</Empty>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs text-muted">
-                  <tr className="border-b border-line">
-                    <th className="py-2 pr-3 font-medium">Пользователь</th>
-                    <th className="py-2 pr-3 font-medium">Telegram ID</th>
-                    <th className="py-2 pr-3 text-right font-medium">Подписки</th>
-                    <th className="py-2 pr-3 text-right font-medium">Поиски</th>
-                    <th className="py-2 pr-3 font-medium">Был</th>
-                    <th className="py-2 pr-3 font-medium">С нами с</th>
-                    <th className="py-2 font-medium">Статус</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(list.data?.items ?? []).map((u) => (
-                    <tr
-                      key={u.id}
-                      onClick={() => setOpenId(u.id)}
-                      className={cx('cursor-pointer border-b border-line/60 last:border-0 hover:bg-panel-2', openId === u.id && 'bg-panel-2')}
-                    >
-                      <td className="py-2 pr-3">
-                        <div className="font-medium">{u.first_name || '—'}</div>
-                        <div className="text-xs text-muted">{u.username ? `@${u.username}` : 'без username'}</div>
-                      </td>
-                      <td className="py-2 pr-3 font-mono text-xs">{u.tg_id}</td>
-                      <td className="py-2 pr-3 text-right tabular-nums">{u.subscriptions} / {u.max_subscriptions}</td>
-                      <td className="py-2 pr-3 text-right tabular-nums">{u.searches}</td>
-                      <td className="py-2 pr-3 text-xs text-muted">{ago(u.last_seen_at)}</td>
-                      <td className="py-2 pr-3 text-xs text-muted">{fmtTime(u.created_at)}</td>
-                      <td className="py-2">{u.is_blocked ? <span className="text-xs text-bad">заблокирован</span> : <span className="text-xs text-ok">активен</span>}</td>
+      <div className="min-w-0 flex-1 overflow-y-auto">
+        <Page>
+          <PageHeader
+            title="Пользователи"
+            description={`Всего ${total}. Откройте пользователя, чтобы посмотреть подписки и историю поисков.`}
+            actions={
+              <div className="relative w-72 max-md:w-full">
+                <Search size={14} className="absolute top-2 left-2.5 text-faint" />
+                <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Имя, @username или Telegram ID" className="pl-8" />
+              </div>
+            }
+          />
+          <ErrorBox error={list.error} />
+          <Card flush>
+            {list.data && list.data.items.length === 0 ? (
+              <Empty>Никого не нашлось</Empty>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className={TABLE.table}>
+                  <thead className={TABLE.head}>
+                    <tr>
+                      <th>Пользователь</th>
+                      <th>Telegram ID</th>
+                      <th className="text-right">Подписки</th>
+                      <th className="text-right">Поиски</th>
+                      <th>Был</th>
+                      <th>С нами с</th>
+                      <th>Статус</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {total > 50 && (
-            <div className="mt-3 flex items-center justify-end gap-2 text-sm">
-              <Button variant="ghost" disabled={page === 1} onClick={() => setPage(page - 1)}>Назад</Button>
-              <span className="text-muted">стр. {page} из {Math.ceil(total / 50)}</span>
-              <Button variant="ghost" disabled={page * 50 >= total} onClick={() => setPage(page + 1)}>Дальше</Button>
-            </div>
-          )}
-        </Card>
+                  </thead>
+                  <tbody>
+                    {(list.data?.items ?? []).map((u) => (
+                      <tr
+                        key={u.id}
+                        onClick={() => setOpenId(u.id)}
+                        className={cx(TABLE.row, 'cursor-pointer transition-colors hover:bg-panel-2/60', openId === u.id && 'bg-panel-2')}
+                      >
+                        <td>
+                          <div className="flex items-center gap-2.5">
+                            <Avatar name={u.first_name || u.username || '?'} />
+                            <div className="min-w-0">
+                              <div className="truncate font-medium">{u.first_name || '—'}</div>
+                              <div className="truncate text-[12px] text-faint">{u.username ? `@${u.username}` : 'без username'}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="font-mono text-[12px] text-muted">{u.tg_id}</td>
+                        <td className="text-right tabular-nums">
+                          {u.subscriptions}
+                          <span className="text-faint"> / {u.max_subscriptions}</span>
+                        </td>
+                        <td className="text-right tabular-nums">{u.searches}</td>
+                        <td className="text-[12px] whitespace-nowrap text-muted">{ago(u.last_seen_at)}</td>
+                        <td className="text-[12px] whitespace-nowrap text-muted">{fmtTime(u.created_at)}</td>
+                        <td>
+                          <span className="inline-flex items-center gap-1.5 text-[12px] text-muted">
+                            <Dot tone={u.is_blocked ? 'bad' : 'ok'} />
+                            {u.is_blocked ? 'заблокирован' : 'активен'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {total > 50 && (
+              <div className="flex items-center justify-end gap-2 border-t border-line px-5 py-3 text-[12px]">
+                <Button variant="ghost" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>
+                  Назад
+                </Button>
+                <span className="text-muted tabular-nums">
+                  {page} из {Math.ceil(total / 50)}
+                </span>
+                <Button variant="ghost" size="sm" disabled={page * 50 >= total} onClick={() => setPage(page + 1)}>
+                  Дальше
+                </Button>
+              </div>
+            )}
+          </Card>
+        </Page>
       </div>
       {openId != null && <UserDrawer id={openId} onClose={() => setOpenId(null)} onChanged={() => list.reload()} />}
     </div>
@@ -125,79 +154,104 @@ function UserDrawer({ id, onClose, onChanged }: { id: number; onClose: () => voi
   }
 
   return (
-    <aside className="w-[420px] shrink-0 space-y-4 overflow-y-auto border-l border-line bg-panel p-4 max-lg:fixed max-lg:inset-0 max-lg:z-20 max-lg:w-full">
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="text-lg font-semibold">{d?.user.first_name || 'Пользователь'}</div>
-          <div className="text-xs text-muted">{d?.user.username ? `@${d.user.username} · ` : ''}ID {d?.user.tg_id}</div>
+    <aside className="w-[400px] shrink-0 overflow-y-auto border-l border-line bg-panel max-lg:fixed max-lg:inset-0 max-lg:z-20 max-lg:w-full">
+      <div className="flex items-start justify-between gap-2 border-b border-line px-5 py-5">
+        <div className="flex min-w-0 items-center gap-3">
+          <Avatar name={d?.user.first_name || d?.user.username || '?'} />
+          <div className="min-w-0">
+            <div className="truncate text-[16px] font-semibold tracking-tight">{d?.user.first_name || 'Пользователь'}</div>
+            <div className="truncate text-[12px] text-faint">
+              {d?.user.username ? `@${d.user.username} · ` : ''}
+              <span className="font-mono">{d?.user.tg_id}</span>
+            </div>
+          </div>
         </div>
-        <button onClick={onClose} className="rounded p-1 text-muted hover:bg-panel-2 hover:text-ink"><X size={18} /></button>
+        <Button variant="quiet" size="sm" onClick={onClose} title="Закрыть">
+          <X size={15} />
+        </Button>
       </div>
-      <ErrorBox error={error || detail.error} />
+      {Boolean(error || detail.error) && (
+        <div className="px-5 pt-4">
+          <ErrorBox error={error || detail.error} />
+        </div>
+      )}
       {d && (
         <>
-          <Card title="Управление">
-            <div className="space-y-3">
-              <Button variant={d.user.is_blocked ? 'ghost' : 'danger'} onClick={() => patchUser({ is_blocked: !d.user.is_blocked })}>
-                <Ban size={14} /> {d.user.is_blocked ? 'Разблокировать' : 'Заблокировать'}
-              </Button>
+          <Section title="Доступ">
+            <div className="space-y-4">
               <div className="flex items-end gap-2">
                 <label className="flex-1">
-                  <span className="mb-1 block text-xs text-muted">Лимит подписок</span>
+                  <span className="mb-1.5 block text-[12px] font-medium text-muted">Лимит подписок</span>
                   <Input type="number" min={0} value={limit ?? d.user.max_subscriptions} onChange={(e) => setLimit(Number(e.target.value))} />
                 </label>
                 <Button variant="ghost" disabled={limit == null || limit === d.user.max_subscriptions} onClick={() => patchUser({ max_subscriptions: limit })}>
                   Сохранить
                 </Button>
               </div>
+              <Button variant={d.user.is_blocked ? 'ghost' : 'danger'} onClick={() => patchUser({ is_blocked: !d.user.is_blocked })}>
+                <Ban size={14} strokeWidth={1.75} /> {d.user.is_blocked ? 'Разблокировать' : 'Заблокировать'}
+              </Button>
             </div>
-          </Card>
+          </Section>
 
-          <Card title={`Подписки (${d.subscriptions.length})`}>
-            {d.subscriptions.length === 0 && <Empty>Подписок нет</Empty>}
+          <Section title={<>Подписки <span className="font-normal text-faint">{d.subscriptions.length}</span></>}>
+            {d.subscriptions.length === 0 && <p className="text-[13px] text-faint">Подписок нет</p>}
             <div className="space-y-2">
               {d.subscriptions.map((s) => (
-                <div key={s.id} className="rounded-lg border border-line p-3 text-sm">
+                <div key={s.id} className={cx('rounded-lg border border-line px-3 py-2.5', !s.is_active && 'opacity-60')}>
                   <div className="flex items-center justify-between gap-2">
-                    <div className="font-medium">{s.origin_name || s.origin} → {s.destination_name || s.destination}</div>
-                    <button onClick={() => deleteSub(s.id)} className="text-muted hover:text-bad" title="Удалить"><Trash2 size={14} /></button>
+                    <div className="truncate text-[13px] font-medium">
+                      {s.origin_name || s.origin} → {s.destination_name || s.destination}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Toggle checked={s.is_active} onChange={(v) => patchSub(s.id, { is_active: v })} />
+                      <button onClick={() => deleteSub(s.id)} className="text-faint transition-colors hover:text-bad" title="Удалить">
+                        <Trash2 size={14} strokeWidth={1.75} />
+                      </button>
+                    </div>
                   </div>
-                  <div className="text-xs text-muted">
-                    {s.date_from === s.date_to ? s.date_from : `${s.date_from} … ${s.date_to}`} · {s.adults} взр. · минимум {rub(s.last_min_price)}
+                  <div className="mt-1 text-[12px] text-muted">
+                    {s.date_from === s.date_to ? s.date_from : `${s.date_from} — ${s.date_to}`} · {s.adults} взр. · минимум {rub(s.last_min_price)}
                     {s.threshold_rub ? ` · порог ${rub(s.threshold_rub)}` : ''}
                   </div>
-                  <div className="mt-1 flex items-center justify-between text-xs text-muted">
-                    <span>проверено {ago(s.last_checked_at)} · уведомлён {ago(s.last_notified_at)}</span>
-                    <Toggle checked={s.is_active} onChange={(v) => patchSub(s.id, { is_active: v })} />
+                  <div className="mt-0.5 text-[11px] text-faint">
+                    проверено {ago(s.last_checked_at)} · уведомлён {ago(s.last_notified_at)}
                   </div>
                 </div>
               ))}
             </div>
-          </Card>
+          </Section>
 
-          <Card title="Последние поиски">
-            {d.searches.length === 0 && <Empty>Поисков не было</Empty>}
-            <div className="space-y-1">
+          <Section title="Последние поиски">
+            {d.searches.length === 0 && <p className="text-[13px] text-faint">Поисков не было</p>}
+            <div className="divide-y divide-line">
               {d.searches.map((x, i) => (
-                <div key={i} className="flex justify-between gap-2 text-xs">
-                  <span>{x.route} · {x.dates}</span>
-                  <span className="text-muted">{rub(x.min_price)} · {fmtTime(x.at)}</span>
+                <div key={i} className="flex justify-between gap-3 py-1.5 text-[12px]">
+                  <span className="truncate">
+                    {x.route} <span className="text-faint">· {x.dates}</span>
+                  </span>
+                  <span className="shrink-0 text-muted tabular-nums">{rub(x.min_price)}</span>
                 </div>
               ))}
             </div>
-          </Card>
+          </Section>
 
-          <Card title="Уведомления">
-            {d.notifications.length === 0 && <Empty>Не отправлялись</Empty>}
-            <div className="space-y-1">
+          <Section title="Уведомления">
+            {d.notifications.length === 0 && <p className="text-[13px] text-faint">Не отправлялись</p>}
+            <div className="divide-y divide-line">
               {d.notifications.map((n, i) => (
-                <div key={i} className="flex justify-between gap-2 text-xs">
-                  <span className={n.ok ? '' : 'text-bad'}>{n.kind}{n.ok ? '' : ' (не доставлено)'}</span>
-                  <span className="text-muted">{rub(n.price)} · {fmtTime(n.at)}</span>
+                <div key={i} className="flex justify-between gap-3 py-1.5 text-[12px]">
+                  <span className={n.ok ? '' : 'text-bad'}>
+                    {n.kind}
+                    {n.ok ? '' : ' · не доставлено'}
+                  </span>
+                  <span className="shrink-0 text-muted tabular-nums">
+                    {rub(n.price)} <span className="text-faint">· {fmtTime(n.at)}</span>
+                  </span>
                 </div>
               ))}
             </div>
-          </Card>
+          </Section>
         </>
       )}
     </aside>
