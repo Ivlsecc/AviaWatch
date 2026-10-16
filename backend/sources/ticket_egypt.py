@@ -57,6 +57,7 @@ class TicketEgyptSource(Source):
     name = "ticket_egypt"
     title = "Горящие чартеры ticket_egypt"
     method = "json"
+    may_be_empty = True
     param_schema = {
         "channel": f"Username канала (по умолчанию {CHANNEL})",
         "pages": "Сколько страниц истории читать, по 20 постов (по умолчанию 3)",

@@ -21,13 +21,21 @@ class TelegramSender:
     def __init__(self) -> None:
         s = get_settings()
         self.url = f"https://api.telegram.org/bot{s.bot_token}"
-        self.http = httpx.AsyncClient(proxy=telegram_proxy(), timeout=20)
+        proxy = telegram_proxy()
+        self.http = httpx.AsyncClient(proxy=proxy, timeout=20)
+        # Запасной маршрут, если прокси (VPN) недоступен — как у бота (bot/session.py)
+        self.direct = httpx.AsyncClient(timeout=20) if proxy else None
 
     async def send(self, chat_id: int, text: str) -> tuple[bool, str | None]:
-        resp = await self.http.post(
-            f"{self.url}/sendMessage",
-            json={"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True},
-        )
+        payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+        try:
+            resp = await self.http.post(f"{self.url}/sendMessage", json=payload)
+        except (httpx.ConnectError, httpx.ProxyError):
+            # Соединение не установилось — сообщение точно не ушло, повтор безопасен
+            if self.direct is None:
+                raise
+            self.http, self.direct = self.direct, self.http
+            resp = await self.http.post(f"{self.url}/sendMessage", json=payload)
         body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
         if body.get("ok"):
             return True, None
@@ -35,3 +43,5 @@ class TelegramSender:
 
     async def close(self) -> None:
         await self.http.aclose()
+        if self.direct is not None:
+            await self.direct.aclose()

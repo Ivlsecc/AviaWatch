@@ -70,7 +70,10 @@ class AnexSource(Source):
     name = "anex"
     title = "ANEX Tour (чартеры)"
     method = "json"
+    may_be_empty = True
     default_timeout_s = 30.0
+    # С VPN-адресов api.anextour.ru не отвечает (ConnectTimeout), напрямую — за секунду
+    default_proxy = "direct"
     param_schema = {"with_regular": "bool — искать и регулярные рейсы (по умолчанию только чартеры)"}
 
     async def search(self, query: SearchQuery, ctx: SourceContext) -> list[FlightOffer]:

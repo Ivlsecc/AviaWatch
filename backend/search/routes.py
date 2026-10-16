@@ -15,6 +15,7 @@ from search.dedup import merge_duplicates
 from search.filters import FilterSettings, apply_filters
 from search.orchestrator import ProgressHook, SearchResult, SearchService, SourceStatus
 from search.split import mark_split_prices
+from search.verify import verify_cached_prices
 from sources.base import SearchQuery
 
 
@@ -60,8 +61,10 @@ async def search_route(
     use_cache: bool = True,
     progress: ProgressHook | None = None,
     split_check: bool = False,
+    verify: bool = True,
 ) -> SearchResult:
-    """split_check — дополнительно искать на одного взрослого: вдруг билеты по одному дешевле (search/split.py)."""
+    """split_check — дополнительно искать на одного взрослого: вдруг билеты по одному дешевле (search/split.py).
+    verify — сверить верхние цены из кэша Aviasales с живыми сайтами (search/verify.py)."""
     queries = req.queries()
     singles: list[SearchQuery] = []
     if split_check and req.adults >= 2 and not req.children and not req.infants:
@@ -79,6 +82,8 @@ async def search_route(
             agg.offers += st.offers
             agg.ok = agg.ok or st.ok
     offers = merge_duplicates([o for r in results for o in r.offers])
+    if verify:
+        offers = await verify_cached_prices(svc, queries, offers, filters, list(statuses.values()))
     if single_results:
         mark_split_prices(offers, merge_duplicates([o for r in single_results for o in r.offers]), req.adults)
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Protocol
 from zoneinfo import ZoneInfo
@@ -23,6 +24,7 @@ from search.history import price_trend, prune_logs, roll_up_and_prune
 from search.orchestrator import SearchResult, SearchService, as_utc
 from search.recommend import Recommendation, recommend
 from search.routes import RouteRequest, search_route
+from sources.base import FlightOffer
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +45,43 @@ class Notifier(Protocol):
         decision: Decision,
         prev_price: int | None,
         rec: Recommendation | None = None,
+        new_offers: list[FlightOffer] | None = None,
     ) -> bool: ...
+
+
+# Сколько ключей рейсов помним на подписку
+MAX_SEEN = 500
+# Новый рейс стоит уведомления, если он прямой или среди стольких самых дешёвых в выдаче
+NEW_FLIGHT_TOP = 3
+
+
+def flight_key(o: FlightOffer) -> str:
+    return "|".join(str(x) for x in o.identity())
+
+
+def find_new_flights(offers: list[FlightOffer], seen: list[str] | None) -> list[FlightOffer]:
+    """Интересные рейсы, которых раньше не было в выдаче. Первая проверка подписки ничего не считает новым."""
+    if seen is None:
+        return []
+    known = set(seen)
+    return [
+        o for i, o in enumerate(offers)
+        if flight_key(o) not in known and not o.legs_links and (i < NEW_FLIGHT_TOP or o.transfers == 0)
+    ]
+
+
+def remember_flights(seen: list[str] | None, offers: list[FlightOffer], today: date) -> list[str]:
+    """Добавляет рейсы выдачи к уже виденным и забывает улетевшие. Однажды виденный рейс снова «новым» не станет,
+    даже если источник, который его нашёл, на время пропадал."""
+    keys = list(seen or [])
+    known = set(keys)
+    for o in offers:
+        if (k := flight_key(o)) not in known:
+            keys.append(k)
+            known.add(k)
+    cutoff = today.strftime("%Y%m%d")
+    keys = [k for k in keys if not (m := re.search(r"(\d{8})\d{4}", k)) or m.group(1) >= cutoff]
+    return keys[-MAX_SEEN:]
 
 
 def subscription_request(sub: Subscription, today: date | None = None) -> RouteRequest:
@@ -119,8 +157,13 @@ class SubscriptionChecker:
 
     async def check(self, sub: Subscription, now: datetime | None = None, force_send: bool = False) -> Decision:
         now = now or datetime.now(timezone.utc)
-        result = await search_route(self.svc, subscription_request(sub, local_today(now)), FilterSettings.from_dict(sub.filters))
+        result = await search_route(
+            self.svc, subscription_request(sub, local_today(now)), FilterSettings.from_dict(sub.filters), split_check=True
+        )
+        # Цены из кэша, которые живые сайты не подтвердили, не должны вызывать уведомления
+        result.offers = [o for o in result.offers if o.price_check != "unconfirmed"]
         min_price = result.offers[0].price_rub if result.offers else None
+        new_offers = find_new_flights(result.offers, sub.seen_flights)
 
         state = SubState(
             last_min_price=sub.last_min_price,
@@ -128,12 +171,13 @@ class SubscriptionChecker:
             notify_new_min=sub.notify_new_min,
             drop_percent=sub.drop_percent,
             digest_every_hours=sub.digest_every_hours,
+            notify_new_flights=sub.notify_new_flights,
             last_digest_at=as_utc(sub.last_digest_at),
             quiet_from=sub.quiet_from,
             quiet_to=sub.quiet_to,
             timezone=sub.user.timezone,
         )
-        decision = evaluate(state, min_price, now)
+        decision = evaluate(state, min_price, now, new_flights=len(new_offers))
         if force_send and min_price is not None and not decision.send:
             decision = Decision(events=["manual"], send=True, new_baseline=min_price)
 
@@ -148,7 +192,8 @@ class SubscriptionChecker:
                 rec = recommend(best.price_rub // max(req.passengers, 1), stats, trend, best.departure_date, local_today(now))
             except Exception:  # noqa: BLE001 — без рекомендации уведомление всё равно полезно
                 log.exception("recommendation failed")
-            sent = await self.notifier.notify(sub, sub.user, result, decision, sub.last_min_price, rec)
+            fresh = new_offers if "new_flight" in decision.events else None
+            sent = await self.notifier.notify(sub, sub.user, result, decision, sub.last_min_price, rec, fresh)
             for ev in decision.events:
                 NOTIFICATIONS.labels(ev).inc()
 
@@ -159,6 +204,8 @@ class SubscriptionChecker:
             db_sub.last_checked_at = now
             if decision.new_baseline is not None and (sent or not decision.send):
                 db_sub.last_min_price = decision.new_baseline
+            if not decision.deferred and (sent or not decision.send):
+                db_sub.seen_flights = remember_flights(sub.seen_flights, result.offers, local_today(now))
             if sent:
                 db_sub.last_notified_at = now
                 if "digest" in decision.events:

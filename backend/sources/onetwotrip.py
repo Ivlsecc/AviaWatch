@@ -34,6 +34,8 @@ class OneTwoTripSource(Source):
     name = "onetwotrip"
     title = "OneTwoTrip"
     method = "json"
+    # По Египту у OneTwoTrip почти нет рейсов — пустой ответ на контрольном маршруте не поломка
+    may_be_empty = True
     default_timeout_s = 40.0
 
     async def search(self, query: SearchQuery, ctx: SourceContext) -> list[FlightOffer]:

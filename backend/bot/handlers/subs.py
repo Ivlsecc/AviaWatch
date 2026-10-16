@@ -91,6 +91,7 @@ def card_text(sub: Subscription) -> str:
         "<b>Когда писать:</b>",
         f"🎯 Порог: {rub(sub.threshold_rub) + ' и ниже' if sub.threshold_rub else 'не задан'}",
         f"📉 Снижение: {_drop_label(sub)}",
+        f"🆕 Новые рейсы: {'писать, если появится прямой или дешёвый' if sub.notify_new_flights else 'выкл'}",
         f"🗞 Сводка: {f'каждые {sub.digest_every_hours} ч' if sub.digest_every_hours else 'выкл'}",
         f"🌙 Тихие часы: {_quiet_label(sub)}",
         "",
@@ -139,7 +140,7 @@ async def _update(sub_id: int, user: User, **changes) -> Subscription | None:
         return sub
 
 
-@router.callback_query(Sub.filter(F.action.in_({"drop", "digest", "quiet", "toggle"})))
+@router.callback_query(Sub.filter(F.action.in_({"drop", "digest", "quiet", "toggle", "newfl"})))
 async def sub_cycle(cb: CallbackQuery, callback_data: Sub, user: User) -> None:
     sub = await _load(callback_data.id, user)
     if sub is None:
@@ -156,6 +157,8 @@ async def sub_cycle(cb: CallbackQuery, callback_data: Sub, user: User) -> None:
             sub = await _update(sub.id, user, quiet_from=q_from, quiet_to=q_to)
         case "toggle":
             sub = await _update(sub.id, user, is_active=not sub.is_active)
+        case "newfl":
+            sub = await _update(sub.id, user, notify_new_flights=not sub.notify_new_flights)
     await open_card(cb, sub)
 
 

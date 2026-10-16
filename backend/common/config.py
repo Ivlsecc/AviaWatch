@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     search_cache_ttl_s: int = 15 * 60
     source_failure_threshold: int = 5
     source_cooldown_min: int = 30
+    # Контрольный маршрут для автопроверки источников (scheduler/health.py) и её период, часы (0 — выкл)
+    health_route: str = "HRG-MOW"
+    health_check_hours: int = 6
 
     # Подписки: как часто перепроверять цены (минуты)
     subscription_check_minutes: int = 60

@@ -14,6 +14,7 @@ class SubState:
     notify_new_min: bool = True
     drop_percent: float | None = None
     digest_every_hours: int | None = None
+    notify_new_flights: bool = True
     last_digest_at: datetime | None = None
     quiet_from: int | None = None
     quiet_to: int | None = None
@@ -22,7 +23,7 @@ class SubState:
 
 @dataclass
 class Decision:
-    events: list[str] = field(default_factory=list)  # threshold | drop | digest
+    events: list[str] = field(default_factory=list)  # threshold | drop | new_flight | digest
     send: bool = False
     # Новая база для сравнения; None — не трогать (уведомление отложено тихими часами)
     new_baseline: int | None = None
@@ -38,7 +39,8 @@ def in_quiet_hours(now: datetime, tz: str, q_from: int | None, q_to: int | None)
     return hour >= q_from or hour < q_to  # окно через полночь, например 23–8
 
 
-def evaluate(st: SubState, min_price: int | None, now: datetime) -> Decision:
+def evaluate(st: SubState, min_price: int | None, now: datetime, new_flights: int = 0) -> Decision:
+    """new_flights — сколько интересных рейсов впервые появилось в выдаче (считает checker)."""
     if min_price is None:
         return Decision(new_baseline=None)
 
@@ -56,6 +58,9 @@ def evaluate(st: SubState, min_price: int | None, now: datetime) -> Decision:
                 events.append("drop")
         elif st.notify_new_min:
             events.append("drop")
+
+    if new_flights and st.notify_new_flights:
+        events.append("new_flight")
 
     if st.digest_every_hours and (
         st.last_digest_at is None or now - st.last_digest_at >= timedelta(hours=st.digest_every_hours)

@@ -86,6 +86,10 @@ class FlightOffer(BaseModel):
     legs_links: list[tuple[str, int, str]] = Field(default_factory=list)
     # Цена одного билета при поиске на одного пассажира, если так заметно дешевле (см. search/split.py)
     split_single_rub: int | None = None
+    # Перепроверка цены из кэша на живых сайтах: confirmed | updated | unconfirmed (None — не нужна)
+    price_check: str | None = None
+    # Цена в кэше до обновления (для price_check == "updated")
+    cached_price_rub: int | None = None
     collected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
@@ -183,6 +187,10 @@ class Source(ABC):
     default_timeout_s: ClassVar[float] = 20.0
     # Прокси по умолчанию: None — глобальный из .env, "direct" — всегда напрямую, мимо системного прокси
     default_proxy: ClassVar[str | None] = None
+    # False — источник отдаёт цены из кэша чужих поисков (могли устареть), см. search/verify.py
+    live: ClassVar[bool] = True
+    # True — пустой ответ на проверочном маршруте нормален (чартеры появляются за пару дней до вылета)
+    may_be_empty: ClassVar[bool] = False
 
     @abstractmethod
     async def search(self, query: SearchQuery, ctx: SourceContext) -> list[FlightOffer]:

@@ -30,6 +30,8 @@ class AviasalesApiSource(Source):
     name = "aviasales_api"
     title = "Aviasales (API)"
     method = "api"
+    # Data API — кэш поисков пользователей Aviasales за последние дни, а не живая цена
+    live = False
     supports_calendar = True
     param_schema = {
         "token": "Токен Travelpayouts (если пусто — берётся из .env)",

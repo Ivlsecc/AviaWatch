@@ -6,6 +6,22 @@ TRANSFERS = [0, 1, 2, 3]
 # Лимит всего времени в пути, ч; None — авто (×max_duration_factor от самого быстрого)
 DURATION_HOURS = [None, 8, 12, 16, 24]
 LAYOVERS = [(60, 480), (45, 360), (120, 720), (0, 24 * 60)]
+ARRIVAL = [None, "no_night", "day"]
+# Города, где аэропорт прилёта важен: до Внуково и до Домодедово добираться по-разному
+CITY_AIRPORTS = {
+    "MOW": ["SVO", "VKO", "DME", "ZIA"],
+    "IST": ["IST", "SAW"],
+}
+
+
+def airport_choices(destinations: list[str]) -> list[str]:
+    """Аэропорты прилёта, между которыми можно выбирать в фильтре (только для городов с несколькими)."""
+    found: list[str] = []
+    for d in destinations:
+        for code in CITY_AIRPORTS.get(d, []):
+            if code not in found:
+                found.append(code)
+    return found if len(found) > 1 else []
 
 
 def _next(values: list, current):
@@ -32,6 +48,14 @@ def toggle(f: FilterSettings, field: str) -> FilterSettings:
             return f.model_copy(update={"exclude_night_layovers": not f.exclude_night_layovers})
         case "combos":
             return f.model_copy(update={"self_combos": not f.self_combos})
+        case "arrival":
+            return f.model_copy(update={"arrival_window": _next(ARRIVAL, f.arrival_window)})
         case "reset":
             return FilterSettings()
+    if field.startswith("apt_"):
+        code = field[4:]
+        chosen = [a for a in f.arrival_airports if a != code]
+        if code not in f.arrival_airports:
+            chosen.append(code)
+        return f.model_copy(update={"arrival_airports": chosen})
     return f

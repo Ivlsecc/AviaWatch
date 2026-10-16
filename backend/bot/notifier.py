@@ -13,21 +13,32 @@ from common.models import Subscription, User
 from scheduler.rules import Decision
 from search.orchestrator import SearchResult
 from search.recommend import Recommendation
+from sources.base import FlightOffer
 
 log = logging.getLogger(__name__)
 
 HEADERS = {
     "threshold": "🎯 <b>Цена ниже вашего порога!</b>",
     "drop": "📉 <b>Цена снизилась</b>",
+    "new_flight": "🆕 <b>Появился новый рейс</b>",
     "digest": "🗞 <b>Сводка по маршруту</b>",
     "manual": "🔍 <b>Текущие цены</b>",
 }
 
 
+ALERT_OFFERS = 3
+
+
 def alert_text(
-    sub: Subscription, result: SearchResult, decision: Decision, prev: int | None, rec: Recommendation | None = None
+    sub: Subscription,
+    result: SearchResult,
+    decision: Decision,
+    prev: int | None,
+    rec: Recommendation | None = None,
+    new_offers: list[FlightOffer] | None = None,
 ) -> str:
-    head = next((HEADERS[e] for e in ("threshold", "drop", "manual", "digest") if e in decision.events), HEADERS["digest"])
+    order = ("threshold", "drop", "new_flight", "manual", "digest")
+    head = next((HEADERS[e] for e in order if e in decision.events), HEADERS["digest"])
     route = f"{escape(sub.origin_name or sub.origin)} → {escape(sub.destination_name or sub.destination)}"
     price = result.offers[0].price_rub if result.offers else None
     line = f"Сейчас от <b>{rub(price)}</b>"
@@ -38,7 +49,12 @@ def alert_text(
         line += f"\nВаш порог: {rub(sub.threshold_rub)}"
     if rec:
         line += f"\n{rec.emoji} <b>{rec.title}</b>" + (f": {escape(rec.reasons[0])}" if rec.reasons else "")
-    offers = "\n\n".join(offer_line(i + 1, o, max(sub.adults + sub.children, 1)) for i, o in enumerate(result.offers[:3]))
+    # Новые рейсы — первыми и с пометкой, остальное место добираем самыми дешёвыми
+    new_ids = {id(o) for o in new_offers or []}
+    shown = (new_offers or [])[:ALERT_OFFERS]
+    shown += [o for o in result.offers if id(o) not in new_ids][: ALERT_OFFERS - len(shown)]
+    pax = max(sub.adults + sub.children, 1)
+    offers = "\n\n".join(("🆕 " if id(o) in new_ids else "") + offer_line(i + 1, o, pax) for i, o in enumerate(shown))
     return f"{head}\n<b>{route}</b> · {dates_label(sub.date_from, sub.date_to)}\n{line}\n\n{offers or 'Подходящих рейсов сейчас нет.'}"
 
 
@@ -55,9 +71,10 @@ class BotNotifier:
         decision: Decision,
         prev_price: int | None,
         rec: Recommendation | None = None,
+        new_offers: list[FlightOffer] | None = None,
     ) -> bool:
         try:
-            text = alert_text(sub, result, decision, prev_price, rec)
+            text = alert_text(sub, result, decision, prev_price, rec, new_offers)
             await self.bot.send_message(user.tg_id, text, reply_markup=kb.alert(sub.id))
             return True
         except TelegramForbiddenError:
@@ -73,7 +90,13 @@ class BotNotifier:
             return False
 
     async def source_down(self, name: str, error: str) -> None:
-        text = f"🔴 Источник <b>{escape(name)}</b> временно отключён после серии ошибок.\n<code>{escape(error[:500])}</code>"
+        await self.admin_message(
+            f"🔴 Источник <b>{escape(name)}</b> временно отключён после серии ошибок.\n<code>{escape(error[:500])}</code>"
+        )
+
+    async def admin_message(self, text: str) -> None:
+        if not self.admin_ids:
+            log.warning("admin alert (no ADMIN_TG_IDS): %s", text)
         for admin in self.admin_ids:
             try:
                 await self.bot.send_message(admin, text)

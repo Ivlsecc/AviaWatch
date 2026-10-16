@@ -37,7 +37,7 @@ class FakeNotifier:
         self.sent = []
         self.recs = []
 
-    async def notify(self, sub, user, result, decision, prev_price, rec=None):
+    async def notify(self, sub, user, result, decision, prev_price, rec=None, new_offers=None):
         self.recs.append(rec)
         self.sent.append((sub.id, decision.events, result.offers[0].price_rub, prev_price))
         return True

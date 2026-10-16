@@ -52,11 +52,15 @@ class Subscription(Base):
     notify_new_min: Mapped[bool] = mapped_column(Boolean, default=True)
     drop_percent: Mapped[float | None] = mapped_column(Float)
     digest_every_hours: Mapped[int | None] = mapped_column(Integer)
+    # Писать, когда в выдаче появился новый подходящий рейс (чартер, прямой и т.п.)
+    notify_new_flights: Mapped[bool] = mapped_column(Boolean, default=True)
     quiet_from: Mapped[int | None] = mapped_column(Integer)  # час 0..23
     quiet_to: Mapped[int | None] = mapped_column(Integer)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     last_min_price: Mapped[int | None] = mapped_column(Integer)
+    # Ключи рейсов, которые уже были в выдаче (см. scheduler/checker.py); None — ещё не проверяли
+    seen_flights: Mapped[list | None] = mapped_column(JSON)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_digest_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

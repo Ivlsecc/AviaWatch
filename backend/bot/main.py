@@ -21,10 +21,12 @@ from aiogram.types import BotCommand
 from bot.handlers import search, start, subs
 from bot.middlewares import UserMiddleware
 from bot.notifier import BotNotifier
+from bot.session import FallbackSession
 from common.config import get_settings
 from common.metrics import start_metrics_server
 from common.telegram_send import telegram_proxy
 from scheduler.checker import SubscriptionChecker
+from scheduler.health import SourceHealthMonitor
 from search.orchestrator import SearchService, sync_source_configs
 
 log = logging.getLogger("aviawatch.bot")
@@ -52,12 +54,14 @@ async def main() -> None:
         log.info("Telegram через прокси %s", proxy.split("@")[-1])
     bot = Bot(
         settings.bot_token,
-        session=AiohttpSession(proxy=proxy) if proxy else None,
+        # Прокси упал — бот переключится на прямое соединение, а не замолчит
+        session=FallbackSession(proxy) if proxy else AiohttpSession(),
         default=DefaultBotProperties(parse_mode=ParseMode.HTML, link_preview_is_disabled=True),
     )
     notifier = BotNotifier(bot, settings.admin_tg_ids)
     svc = SearchService(on_source_down=notifier.source_down)
     checker = SubscriptionChecker(svc, notifier)
+    health = SourceHealthMonitor(svc, notifier.admin_message)
 
     dp = Dispatcher(storage=make_storage(settings.redis_url))
     dp["svc"] = svc
@@ -75,12 +79,14 @@ async def main() -> None:
     )
 
     checker_task = asyncio.create_task(checker.run_forever())
+    health_task = asyncio.create_task(health.run_forever())
     me = await bot.get_me()
     log.info("Бот @%s запущен", me.username)
     try:
         await dp.start_polling(bot)
     finally:
         checker_task.cancel()
+        health_task.cancel()
         await svc.close()
         await bot.session.close()
 

@@ -4,12 +4,11 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from html import escape
-from zoneinfo import ZoneInfo
 
 from common.airports import airports
 
 from search.analytics import PriceStats
-from search.filters import NIGHT_HOURS, FilterSettings
+from search.filters import ARRIVAL_WINDOWS, NIGHT_HOURS, FilterSettings, local_arrival
 from search.flexible import FlexHint
 from search.split import split_saving
 from search.history import Trend
@@ -89,19 +88,6 @@ def day_label(day: date) -> str:
     return f"{day.day} {MONTHS_SHORT[day.month - 1]}, {WEEKDAYS[day.weekday()]}"
 
 
-def local_arrival(o: FlightOffer) -> datetime | None:
-    """Прилёт по местному времени аэропорта прибытия (у источников бывает пояс вылета)."""
-    if not o.arrival_at:
-        return None
-    tz = airports.tz(o.destination_airport)
-    if not tz:
-        return o.arrival_at
-    try:
-        return o.arrival_at.astimezone(ZoneInfo(tz))
-    except Exception:  # noqa: BLE001 — неизвестный пояс: показываем как есть
-        return o.arrival_at
-
-
 def times_label(o: FlightOffer) -> str:
     if not o.time_known:
         return f"{o.origin_airport} → {o.destination_airport}, время уточнять у продавца"
@@ -131,6 +117,18 @@ def transfers_label(o: FlightOffer) -> str:
 MAX_ALT_LINKS = 2
 
 
+def price_check_line(o: FlightOffer) -> str | None:
+    """Итог сверки цены из кэша Aviasales с живыми сайтами (search/verify.py)."""
+    match o.price_check:
+        case "confirmed":
+            return "✓ <i>цена подтверждена на живом сайте</i>"
+        case "updated":
+            return f"↻ <i>в кэше Aviasales было {rub(o.cached_price_rub)}, на сайтах сейчас дороже</i>"
+        case "unconfirmed":
+            return "⚠️ <i>цена из кэша Aviasales, на живых сайтах рейс не нашёлся — проверьте по ссылке</i>"
+    return None
+
+
 def offer_line(i: int, o: FlightOffer, pax: int = 1) -> str:
     each = f" · {rub(round(o.price_rub / pax))} за чел." if pax > 1 else ""
     head = f"<b>{i}. {rub(o.price_rub)}</b>{each}"
@@ -156,6 +154,8 @@ def offer_line(i: int, o: FlightOffer, pax: int = 1) -> str:
         lines[-1] += " · без багажа"
     if o.note:
         lines.append(f"<i>{escape(o.note)}</i>")
+    if check := price_check_line(o):
+        lines.append(check)
     if sp := split_saving(o, pax):
         saving = rub(sp.saving_min)
         if sp.saving_max > sp.saving_min:
@@ -298,10 +298,21 @@ def filters_text(f: FilterSettings) -> str:
             f"• Смена аэропорта при стыковке: <b>{'исключать' if f.exclude_airport_change else 'разрешить'}</b>",
             f"• Самостоятельная пересадка: <b>{'исключать' if f.exclude_self_transfer else 'разрешить'}</b>",
             f"• Ночные стыковки: <b>{'исключать' if f.exclude_night_layovers else 'разрешить'}</b>",
+            f"• Прилёт: <b>{arrival_label(f)}</b>",
             f"• 🧩 Составные маршруты: <b>{'искать' if f.self_combos else 'нет'}</b>",
             "   <i>два отдельных билета через Стамбул/Каир/Дубай — бывает намного дешевле, но багаж и риск опоздания на вас</i>",
         ]
     )
+
+
+ARRIVAL_TITLES = {None: "в любое время", "no_night": "не ночью, 06–24", "day": "днём, 08–22"}
+
+
+def arrival_label(f: FilterSettings) -> str:
+    text = ARRIVAL_TITLES.get(f.arrival_window, "в любое время")
+    if f.arrival_airports:
+        text += ", только " + ", ".join(f.arrival_airports)
+    return text
 
 
 def duration_factor_label(f: FilterSettings) -> str:

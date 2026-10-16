@@ -15,8 +15,8 @@ from sqlalchemy import func, select
 from bot import keyboards as kb
 from bot import texts
 from bot.callbacks import Cal, Flex, Flt, Menu, Pax, PlacePick, Res, Wiz
-from bot.filters_logic import toggle
-from bot.fmt import PAGE_SIZE, dates_label, filters_text, layover_label, pax_label, results_text, route_title
+from bot.filters_logic import airport_choices, toggle
+from bot.fmt import PAGE_SIZE, arrival_label, dates_label, filters_text, layover_label, pax_label, results_text, route_title
 from bot.states import Wizard
 from bot.progress import SearchProgress
 from bot.utils import safe_edit, show
@@ -263,6 +263,7 @@ async def show_summary(target: CallbackQuery, state: FSMContext) -> None:
         f"👤 {pax_label(req.adults, req.children, req.infants)}\n"
         f"⚙️ пересадок ≤ {0 if req.direct_only else f.max_transfers}, стыковка {layover_label(f)}"
         + (", без смены аэропорта" if f.exclude_airport_change else "")
+        + (f", прилёт {arrival_label(f)}" if f.arrival_window or f.arrival_airports else "")
     )
     await show(target, text, kb.summary(req.direct_only))
 
@@ -277,8 +278,9 @@ async def wiz_direct(cb: CallbackQuery, state: FSMContext) -> None:
 @router.callback_query(Wiz.filter(F.action == "filters"))
 async def wiz_filters(cb: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(Wizard.filters)
-    f = FilterSettings.from_dict((await state.get_data())["filters"])
-    await show(cb, filters_text(f), kb.filters(f, "wiz"))
+    data = await state.get_data()
+    f = FilterSettings.from_dict(data["filters"])
+    await show(cb, filters_text(f), kb.filters(f, "wiz", airport_choices(data.get("destinations", []))))
 
 
 @router.callback_query(Flt.filter(F.ctx == "wiz"))
@@ -294,12 +296,13 @@ async def wiz_filter_toggle(cb: CallbackQuery, callback_data: Flt, state: FSMCon
     if callback_data.field == "save":
         async with session_scope() as s:
             db_user = await s.get(User, user.id)
-            db_user.default_filters = f.model_dump()
+            # Аэропорты прилёта относятся к конкретному городу — в общие настройки их не переносим
+            db_user.default_filters = f.model_copy(update={"arrival_airports": []}).model_dump()
         await cb.answer("Сохранено: эти фильтры будут применяться ко всем новым поискам", show_alert=True)
         return
     f = toggle(f, callback_data.field)
     await state.update_data(filters=f.model_dump())
-    await show(cb, filters_text(f), kb.filters(f, "wiz"))
+    await show(cb, filters_text(f), kb.filters(f, "wiz", airport_choices(data.get("destinations", []))))
 
 
 # ---------- поиск и выдача ----------

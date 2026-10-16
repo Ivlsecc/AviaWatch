@@ -125,7 +125,10 @@ def summary(direct_only: bool) -> InlineKeyboardMarkup:
     )
 
 
-def filters(f: FilterSettings, ctx: str) -> InlineKeyboardMarkup:
+ARRIVAL_BTN = {None: "любое", "no_night": "не ночью", "day": "днём"}
+
+
+def filters(f: FilterSettings, ctx: str, arrival_airports: list[str] | None = None) -> InlineKeyboardMarkup:
     def b(text: str, field: str) -> Btn:
         return Btn(text=text, callback_data=Flt(field=field, ctx=ctx).pack())
 
@@ -135,8 +138,14 @@ def filters(f: FilterSettings, ctx: str) -> InlineKeyboardMarkup:
         [b(("✅" if f.exclude_airport_change else "⬜") + " Без смены аэропорта", "airport")],
         [b(("✅" if f.exclude_self_transfer else "⬜") + " Без самост. пересадки", "self")],
         [b(("✅" if f.exclude_night_layovers else "⬜") + " Без ночных стыковок", "night")],
+        [b(f"Время прилёта: {ARRIVAL_BTN.get(f.arrival_window, 'любое')}", "arrival")],
         [b(("✅" if f.self_combos else "⬜") + " 🧩 Составные маршруты (лайфхак)", "combos")],
     ]
+    if arrival_airports:
+        # Пусто — любой аэропорт; отмеченные — только они
+        rows.append([
+            b(("✅ " if code in f.arrival_airports else "") + code, f"apt_{code}") for code in arrival_airports
+        ])
     if ctx == "wiz":
         rows.append([b("💾 Сделать фильтрами по умолчанию", "save")])
         rows.append([b("← К поиску", "done")])
@@ -190,6 +199,7 @@ def sub_card(s: Subscription) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [b("🎯 Порог цены", "threshold"), b("📉 Снижение", "drop")],
+            [b("🆕 Новые рейсы: " + ("вкл" if s.notify_new_flights else "выкл"), "newfl")],
             [b("🗞 Сводка", "digest"), b("🌙 Тихие часы", "quiet")],
             [b("📋 Все варианты", "results"), b("🔍 Проверить сейчас", "check")],
             [b("⏸ Пауза" if s.is_active else "▶️ Возобновить", "toggle"), b("🗑 Удалить", "delete")],
