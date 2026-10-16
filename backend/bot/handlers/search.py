@@ -345,7 +345,7 @@ async def render_results(
 
     try:
         result, stats = await asyncio.gather(
-            search_route(svc, req, filters, user.id, use_cache=use_cache, progress=progress),
+            search_route(svc, req, filters, user.id, use_cache=use_cache, progress=progress, split_check=True),
             route_price_stats(svc, req.origins, req.destinations),
         )
     except Exception:  # noqa: BLE001 — пользователь должен увидеть ответ, а не вечное «Ищу…»

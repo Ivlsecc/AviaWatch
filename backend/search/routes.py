@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from search.dedup import merge_duplicates
 from search.filters import FilterSettings, apply_filters
 from search.orchestrator import ProgressHook, SearchResult, SearchService, SourceStatus
+from search.split import mark_split_prices
 from sources.base import SearchQuery
 
 
@@ -58,9 +59,18 @@ async def search_route(
     user_id: int | None = None,
     use_cache: bool = True,
     progress: ProgressHook | None = None,
+    split_check: bool = False,
 ) -> SearchResult:
+    """split_check — дополнительно искать на одного взрослого: вдруг билеты по одному дешевле (search/split.py)."""
     queries = req.queries()
-    results = await asyncio.gather(*(svc.search(q, filters, user_id, use_cache, progress=progress) for q in queries))
+    singles: list[SearchQuery] = []
+    if split_check and req.adults >= 2 and not req.children and not req.infants:
+        singles = [q.model_copy(update={"adults": 1}) for q in queries]
+    found = await asyncio.gather(
+        *(svc.search(q, filters, user_id, use_cache, progress=progress) for q in queries),
+        *(svc.search(q, filters, user_id, use_cache, log_search=False) for q in singles),
+    )
+    results, single_results = found[: len(queries)], found[len(queries):]
 
     statuses: dict[str, SourceStatus] = {}
     for r in results:
@@ -69,6 +79,8 @@ async def search_route(
             agg.offers += st.offers
             agg.ok = agg.ok or st.ok
     offers = merge_duplicates([o for r in results for o in r.offers])
+    if single_results:
+        mark_split_prices(offers, merge_duplicates([o for r in single_results for o in r.offers]), req.adults)
 
     if filters.self_combos:
         combos = await _combos(svc, queries, filters)

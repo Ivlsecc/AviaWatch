@@ -84,6 +84,8 @@ class FlightOffer(BaseModel):
     alt_links: list[tuple[str, int, str]] = Field(default_factory=list)
     # Составной маршрут: отдельные билеты (подпись, цена, ссылка) — покупать каждый
     legs_links: list[tuple[str, int, str]] = Field(default_factory=list)
+    # Цена одного билета при поиске на одного пассажира, если так заметно дешевле (см. search/split.py)
+    split_single_rub: int | None = None
     collected_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property

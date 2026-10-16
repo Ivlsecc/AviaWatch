@@ -8,6 +8,7 @@ from html import escape
 from search.analytics import PriceStats
 from search.filters import NIGHT_HOURS, FilterSettings
 from search.flexible import FlexHint
+from search.split import split_saving
 from search.history import Trend
 from search.recommend import Recommendation
 from search.orchestrator import SearchResult
@@ -89,7 +90,7 @@ def transfers_label(o: FlightOffer) -> str:
     return f"{o.transfers} {word}" + (f" ({', '.join(via)})" if via else "")
 
 
-def offer_line(i: int, o: FlightOffer) -> str:
+def offer_line(i: int, o: FlightOffer, pax: int = 1) -> str:
     flights = ", ".join(o.flight_numbers) or ", ".join(o.airlines)
     details = " · ".join(x for x in (transfers_label(o), duration(o.duration_min), flights) if x)
     if o.legs_links:
@@ -109,6 +110,11 @@ def offer_line(i: int, o: FlightOffer) -> str:
     )
     if o.note:
         text += f"    ℹ️ {escape(o.note)}\n"
+    if sp := split_saving(o, pax):
+        saving = rub(sp.saving_min)
+        if sp.saving_max > sp.saving_min:
+            saving = f"{saving.removesuffix(' ₽')}–{rub(sp.saving_max)}"
+        text += f"    👥 Выгоднее по одному: билет от {rub(sp.single_price)} вместо {rub(sp.together_each)}, экономия {saving}\n"
     return text + f"    🛒 {' · '.join(links)}"
 
 
@@ -158,7 +164,12 @@ def results_text(
     else:
         start = page * PAGE_SIZE
         chunk = offers[start : start + PAGE_SIZE]
-        parts.append("\n\n".join(offer_line(start + i + 1, o) for i, o in enumerate(chunk)))
+        if split_count := sum(1 for o in offers if split_saving(o, req.adults)):
+            parts.append(
+                f"👥 На {split_count} {plural(split_count, 'рейсе', 'рейсах', 'рейсах')} дешёвый тариф остался не на всех: "
+                "оформите отдельную бронь на каждого — так дешевле"
+            )
+        parts.append("\n\n".join(offer_line(start + i + 1, o, req.adults) for i, o in enumerate(chunk)))
         parts.append(f"<i>Показано {start + 1}–{start + len(chunk)} из {len(offers)}</i>")
 
     parts.append(sources_line(result))
