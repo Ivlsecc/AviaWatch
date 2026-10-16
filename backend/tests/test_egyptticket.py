@@ -112,5 +112,5 @@ def test_offer_without_time_renders_date_only():
         "egyptticket",
     )
     line = offer_line(1, o)
-    assert "19.10, время уточнять" in line and "12:00" not in line and "ℹ️ чартер" in line
+    assert "19 окт, пн" in line and "время уточнять" in line and "12:00" not in line and "<i>чартер" in line
     assert o.departure_at.tzinfo == timezone.utc

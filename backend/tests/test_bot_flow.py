@@ -199,11 +199,11 @@ async def test_full_user_journey(h: Harness):
     await h.press(Wiz(action="search"))
     results = h.session.texts()[-1]
     assert "Хургада / Шарм-эль-Шейх → Москва" in results
-    assert "1. <b>30 000 ₽</b>" in results  # 2 пассажира × 15 000
-    assert "Средняя цена" in results and "Показано 1–5" in results
+    assert "<b>1. " in results and "за чел." in results  # 2 пассажира
+    assert "1–5 из" in results and "ответили" in results
     assert Res(action="page", page=1).pack() in h.buttons()
     await h.press(Res(action="page", page=1))
-    assert "6. <b>" in h.session.texts()[-1]
+    assert "<b>6. " in h.session.texts()[-1]
 
     # --- подписка ---
     await h.press(Res(action="subscribe"))
@@ -246,7 +246,7 @@ async def test_full_user_journey(h: Harness):
         user = await s.scalar(select(User).where(User.tg_id == 777))
         assert user.default_filters["self_combos"] is True
     await h.press(Menu(action="help"))
-    assert "Как это работает" in h.session.texts()[-1]
+    assert "Как пользоваться" in h.session.texts()[-1]
 
 
 async def test_maintenance_mode_blocks_users(h: Harness):

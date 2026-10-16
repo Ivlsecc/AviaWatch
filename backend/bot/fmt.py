@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from html import escape
+from zoneinfo import ZoneInfo
+
+from common.airports import airports
 
 from search.analytics import PriceStats
 from search.filters import NIGHT_HOURS, FilterSettings
@@ -34,7 +37,9 @@ def d(day: date) -> str:
 def dates_label(a: date, b: date) -> str:
     if a == b:
         return f"{a.day} {MONTHS_GEN[a.month - 1]}"
-    return f"{d(a)} – {d(b)}"
+    if (a.year, a.month) == (b.year, b.month):
+        return f"{a.day}–{b.day} {MONTHS_GEN[a.month - 1]}"
+    return f"{a.day} {MONTHS_GEN[a.month - 1]} – {b.day} {MONTHS_GEN[b.month - 1]}"
 
 
 def plural(n: int, one: str, few: str, many: str) -> str:
@@ -75,6 +80,39 @@ def source_title(name: str) -> str:
     return cls.title if cls else name
 
 
+MONTHS_SHORT = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "нояб", "дек"]
+WEEKDAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
+
+
+def day_label(day: date) -> str:
+    """«4 нояб, ср» — дата с днём недели: так проще сверить с календарём."""
+    return f"{day.day} {MONTHS_SHORT[day.month - 1]}, {WEEKDAYS[day.weekday()]}"
+
+
+def local_arrival(o: FlightOffer) -> datetime | None:
+    """Прилёт по местному времени аэропорта прибытия (у источников бывает пояс вылета)."""
+    if not o.arrival_at:
+        return None
+    tz = airports.tz(o.destination_airport)
+    if not tz:
+        return o.arrival_at
+    try:
+        return o.arrival_at.astimezone(ZoneInfo(tz))
+    except Exception:  # noqa: BLE001 — неизвестный пояс: показываем как есть
+        return o.arrival_at
+
+
+def times_label(o: FlightOffer) -> str:
+    if not o.time_known:
+        return f"{o.origin_airport} → {o.destination_airport}, время уточнять у продавца"
+    text = f"{o.departure_at:%H:%M} {o.origin_airport} → "
+    arr = local_arrival(o)
+    if arr:
+        shift = (arr.date() - o.departure_at.date()).days
+        text += f"{arr:%H:%M}{f' (+{shift})' if shift > 0 else ''} "
+    return text + o.destination_airport
+
+
 def transfers_label(o: FlightOffer) -> str:
     if o.transfers == 0:
         return "прямой"
@@ -82,55 +120,70 @@ def transfers_label(o: FlightOffer) -> str:
     if len(o.segments) > 1:
         # Где и сколько ждать — главное, по чему решают, брать ли рейс с пересадкой
         stops = [
-            f"{a.destination} {duration(m)}" + (" 🌙" if a.arrival_at.hour in NIGHT_HOURS else "")
+            f"{a.destination} {duration(m)}" + (", ночью" if a.arrival_at.hour in NIGHT_HOURS else "")
             for a, m in zip(o.segments, o.layovers_min())
         ]
-        return f"{o.transfers} {word} ({', '.join(stops)})"
+        return f"{o.transfers} {word} ({'; '.join(stops)})"
     via = o.route_airports[1:-1]
     return f"{o.transfers} {word}" + (f" ({', '.join(via)})" if via else "")
 
 
+MAX_ALT_LINKS = 2
+
+
 def offer_line(i: int, o: FlightOffer, pax: int = 1) -> str:
-    flights = ", ".join(o.flight_numbers) or ", ".join(o.airlines)
-    details = " · ".join(x for x in (transfers_label(o), duration(o.duration_min), flights) if x)
+    each = f" · {rub(round(o.price_rub / pax))} за чел." if pax > 1 else ""
+    head = f"<b>{i}. {rub(o.price_rub)}</b>{each}"
+    when = f"<b>{day_label(o.departure_at.date())}</b> · {times_label(o)}"
+    if o.duration_min:
+        when += f" · {duration(o.duration_min)}"
+
     if o.legs_links:
         links = [f'<a href="{escape(link, quote=True)}">{escape(label)}</a> {rub(p)}' for label, p, link in o.legs_links]
         return (
-            f"{i}. <b>{rub(o.price_rub)}</b> · {o.departure_at:%d.%m %H:%M} · {o.origin_airport}→{o.destination_airport}\n"
-            f"    🧩 {' → '.join(o.route_airports)} · {duration(o.duration_min)} · {', '.join(o.flight_numbers)}\n"
-            f"    ⚠️ {escape(o.note or '')}\n"
-            f"    🛒 {' + '.join(links)}"
+            f"{head}\n{when}\n"
+            f"🧩 {' → '.join(o.route_airports)} · {', '.join(o.flight_numbers)}\n"
+            f"<i>{escape(o.note or '')}</i>\n"
+            f"Купить по отдельности: {' + '.join(links)}"
         )
-    links = [f'<a href="{escape(o.link, quote=True)}">{escape(source_title(o.source))}</a>']
-    links += [f'<a href="{escape(link, quote=True)}">{escape(source_title(src))} {rub(p)}</a>' for src, p, link in o.alt_links]
-    when = f"{o.departure_at:%d.%m %H:%M}" if o.time_known else f"{o.departure_at:%d.%m}, время уточнять"
-    text = (
-        f"{i}. <b>{rub(o.price_rub)}</b> · {when} · {o.origin_airport}→{o.destination_airport}\n"
-        f"    {details}\n"
-    )
+
+    flights = ", ".join(o.flight_numbers) or ", ".join(o.airlines)
+    route = " · ".join(x for x in (transfers_label(o), flights) if x)
+    lines = [head, when, route]
+    if o.baggage_included is True:
+        lines[-1] += " · с багажом"
+    elif o.baggage_included is False:
+        lines[-1] += " · без багажа"
     if o.note:
-        text += f"    ℹ️ {escape(o.note)}\n"
+        lines.append(f"<i>{escape(o.note)}</i>")
     if sp := split_saving(o, pax):
         saving = rub(sp.saving_min)
         if sp.saving_max > sp.saving_min:
             saving = f"{saving.removesuffix(' ₽')}–{rub(sp.saving_max)}"
-        text += f"    👥 Выгоднее по одному: билет от {rub(sp.single_price)} вместо {rub(sp.together_each)}, экономия {saving}\n"
-    return text + f"    🛒 {' · '.join(links)}"
+        lines.append(f"👥 По одному дешевле: билет от {rub(sp.single_price)} вместо {rub(sp.together_each)}, экономия {saving}")
+
+    buy = f'<a href="{escape(o.link, quote=True)}">{escape(source_title(o.source))}</a>'
+    alts = [f'<a href="{escape(link, quote=True)}">{escape(source_title(src))}</a> {rub(p)}' for src, p, link in o.alt_links[:MAX_ALT_LINKS]]
+    more = len(o.alt_links) - MAX_ALT_LINKS
+    tail = f" · ещё {more}" if more > 0 else ""
+    lines.append(f"→ {buy}" + (f"   <i>также: {' · '.join(alts)}{tail}</i>" if alts else ""))
+    return "\n".join(lines)
 
 
-def stats_block(stats: PriceStats | None, pax: int) -> str:
+def stats_block(stats: PriceStats | None, pax: int, trend: Trend | None = None) -> str:
     if stats is None or stats.mean is None:
-        return "📊 Средняя цена: пока недостаточно данных"
-    text = (
-        f"📊 Средняя цена за 1 пассажира: <b>{rub(stats.mean)}</b> (медиана {rub(stats.median)})\n"
-        f"    вылеты {d(stats.window_from)}–{d(stats.window_to)}, {stats.days} "
-        f"{plural(stats.days, 'день', 'дня', 'дней')} с ценами"
-    )
-    if pax > 1:
-        text += f"\n    на {pax} пасс.: ≈ {rub(stats.mean * pax)}"
-    if not stats.has_history:
-        text += "\n    <i>История за прошлые дни ещё копится — пока только будущие даты</i>"
-    return text
+        line = "Средняя цена: пока мало данных"
+    else:
+        line = f"Обычно <b>{rub(stats.mean)}</b> за человека"
+        if pax > 1:
+            line += f" · на {pax}: ≈ {rub(stats.mean * pax)}"
+        line += f"\n<i>по вылетам {d(stats.window_from)}–{d(stats.window_to)}"
+        if not stats.has_history:
+            line += ", история ещё копится"
+        line += "</i>"
+    if t := trend_block(trend):
+        line += f"\n{t}"
+    return line
 
 
 def results_text(
@@ -143,37 +196,55 @@ def results_text(
     flex: FlexHint | None = None,
 ) -> str:
     head = (
-        f"<b>{route_title(req)}</b>\n"
-        f"📅 {dates_label(req.date_from, req.date_to)} · 👤 {pax_label(req.adults, req.children, req.infants)}"
+        f"✈️ <b>{route_title(req)}</b>\n"
+        f"{dates_label(req.date_from, req.date_to)} · {pax_label(req.adults, req.children, req.infants)}"
         + (" · только прямые" if req.direct_only else "")
     )
-    parts = [head, stats_block(stats, req.passengers)]
-    if trend_line := trend_block(trend):
-        parts.append(trend_line)
+    parts = [head]
+    summary = []
     if rec:
-        parts.append(rec_block(rec))
+        summary.append(rec_block(rec))
+    summary.append(stats_block(stats, req.passengers, trend))
+    parts.append("\n".join(summary))
+
+    hints = []
     if flex:
-        parts.append(
-            f"💡 Вылет <b>{flex.day:%d.%m}</b> — от {rub(flex.price_per_pax)} за пассажира, "
-            f"на {rub(flex.saving_per_pax)} ({flex.saving_pct:.0f}%) дешевле. <i>Цена из календаря, уточнится при поиске</i>"
+        hints.append(
+            f"💡 {day_label(flex.day)} — от {rub(flex.price_per_pax)} за человека, "
+            f"на {flex.saving_pct:.0f}% дешевле <i>(по календарю цен, уточнится при поиске)</i>"
         )
 
     offers = result.offers
     if not offers:
-        parts.append("😕 Подходящих рейсов не нашлось. Попробуйте расширить даты или ослабить фильтры.")
+        parts += hints
+        parts.append("Подходящих рейсов не нашлось. Попробуйте расширить даты или ослабить фильтры.")
     else:
+        if split_count := sum(1 for o in offers if split_saving(o, req.adults)):
+            hints.append(
+                f"👥 На {split_count} {plural(split_count, 'рейсе', 'рейсах', 'рейсах')} дешёвый тариф остался не на всех — "
+                "берите билеты отдельными бронями, по одной на человека"
+            )
+        parts += ["\n".join(hints)] if hints else []
         start = page * PAGE_SIZE
         chunk = offers[start : start + PAGE_SIZE]
-        if split_count := sum(1 for o in offers if split_saving(o, req.adults)):
-            parts.append(
-                f"👥 На {split_count} {plural(split_count, 'рейсе', 'рейсах', 'рейсах')} дешёвый тариф остался не на всех: "
-                "оформите отдельную бронь на каждого — так дешевле"
-            )
-        parts.append("\n\n".join(offer_line(start + i + 1, o, req.adults) for i, o in enumerate(chunk)))
-        parts.append(f"<i>Показано {start + 1}–{start + len(chunk)} из {len(offers)}</i>")
-
-    parts.append(sources_line(result))
+        parts += [offer_line(start + i + 1, o, req.adults) for i, o in enumerate(chunk)]
+        parts.append(footer(result, start, len(chunk), len(offers)))
+    if not offers:
+        parts.append(footer(result, 0, 0, 0))
     return "\n\n".join(parts)
+
+
+def footer(result: SearchResult, start: int, shown: int, total: int) -> str:
+    asked = [st for st in result.statuses if not st.skipped and st.source != "combo"]
+    ok = sum(1 for st in asked if st.ok)
+    text = f"{start + 1}–{start + shown} из {total} · " if total else ""
+    text += f"ответили {ok} из {len(asked)} сайтов"
+    failed = [source_title(st.source) for st in asked if not st.ok]
+    if failed:
+        text += f" (нет ответа: {escape(', '.join(failed))})"
+    if result.from_cache:
+        text += " · из кэша"
+    return f"<i>{text}</i>"
 
 
 SPARKS = "▁▂▃▄▅▆▇█"
@@ -193,17 +264,17 @@ def trend_block(trend: Trend | None) -> str | None:
     arrow = "📉" if change < -1 else ("📈" if change > 1 else "➡️")
     values = [p for _, p in trend.points[-14:]]
     return (
-        f"{arrow} Цена на ваши даты за {trend.days} дн.: {sparkline(values)} "
+        f"{arrow} за {trend.days} {plural(trend.days, 'день', 'дня', 'дней')} {sparkline(values)} "
         f"{'+' if change > 0 else '−' if change < 0 else ''}{abs(change):.0f}%"
     )
 
 
 def rec_block(rec: Recommendation) -> str:
-    lines = [f"{rec.emoji} <b>{rec.title}</b>"]
-    lines += [f"    • {escape(r)}" for r in rec.reasons[:3]]
+    reasons = "; ".join(escape(r) for r in rec.reasons[:2])
+    text = f"{rec.emoji} <b>{rec.title}</b>" + (f" — {reasons}" if reasons else "")
     if rec.low_confidence:
-        lines.append("    <i>данных пока мало — оценка приблизительная, точнее станет через пару дней</i>")
-    return "\n".join(lines)
+        text += " <i>(данных пока мало)</i>"
+    return text
 
 
 def sources_line(result: SearchResult) -> str:

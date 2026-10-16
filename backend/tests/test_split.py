@@ -27,5 +27,5 @@ def test_offer_line_shows_split_hint():
     o = offer(44600, flights=["NE644"])
     mark_split_prices([o], [offer(19800, flights=["NE644"])], pax=2)
     text = offer_line(1, o, pax=2)
-    assert f"👥 Выгоднее по одному: билет от {rub(19800)} вместо {rub(22300)}, экономия {rub(2500)[:-2]}–{rub(5000)}" in text
+    assert "👥 По одному дешевле: билет от" in text and f"{rub(2500)[:-2]}–{rub(5000)}" in text
     assert "👥" not in offer_line(1, o, pax=1)

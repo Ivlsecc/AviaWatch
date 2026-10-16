@@ -104,3 +104,12 @@ async def test_calendar_min_per_day():
     async with httpx.AsyncClient() as client:
         cal = await AviasalesApiSource().calendar("HRG", "MOW", date(2026, 11, 1), date(2026, 11, 30), _ctx(client))
     assert cal == {date(2026, 11, 20): 15200, date(2026, 11, 21): 18900}
+
+
+def test_duration_from_ticket_key_not_first_leg():
+    from sources.aviasales_api import _ticket_duration
+
+    link = "/search/SSH0311MOW1?t=VF17937006001793766600001040SSHESBVKO_2b55&search_date=16102026"
+    assert _ticket_duration(link) == 1040  # API отдал duration_to=405 — это только первый перелёт
+    assert _ticket_duration("/search/SSH0311MOW1?t=2S17956569001795735500001250HRGSAWISTSVO_x") == 1250
+    assert _ticket_duration("/search/SSH0311MOW1") is None

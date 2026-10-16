@@ -105,7 +105,9 @@ class AviasalesApiSource(Source):
         if dep is None or price is None:
             return None
 
-        duration = it.get("duration_to") or it.get("duration")
+        # duration_to у маршрутов с пересадкой бывает длительностью первого перелёта (405 вместо 1040),
+        # а в ключе билета t=… записана полная — ей и верим
+        duration = _ticket_duration(it.get("link") or "") or it.get("duration_to") or it.get("duration")
         arrival = dep + timedelta(minutes=duration) if duration else None
         airline = it.get("airline")
         flight = it.get("flight_number")
@@ -150,6 +152,12 @@ class AviasalesApiSource(Source):
 
 
 _TICKET_RE = re.compile(r"[?&]t=([^_&]+)_")
+
+
+def _ticket_duration(link: str) -> int | None:
+    """Полная длительность из ключа билета: t=VF{вылет:10}{прилёт:10}{минуты:6}SSHESBVKO_…"""
+    m = re.search(r"[?&]t=(?:[A-Z0-9]{2})+?\d{10}\d{10}(\d{6})[A-Z]{6}", link)
+    return int(m.group(1)) if m and int(m.group(1)) > 0 else None
 
 
 def _route_airports(link: str) -> list[str]:

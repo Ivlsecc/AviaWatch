@@ -38,7 +38,7 @@ def alert_text(
         line += f"\nВаш порог: {rub(sub.threshold_rub)}"
     if rec:
         line += f"\n{rec.emoji} <b>{rec.title}</b>" + (f": {escape(rec.reasons[0])}" if rec.reasons else "")
-    offers = "\n\n".join(offer_line(i + 1, o) for i, o in enumerate(result.offers[:3]))
+    offers = "\n\n".join(offer_line(i + 1, o, max(sub.adults + sub.children, 1)) for i, o in enumerate(result.offers[:3]))
     return f"{head}\n<b>{route}</b> · {dates_label(sub.date_from, sub.date_to)}\n{line}\n\n{offers or 'Подходящих рейсов сейчас нет.'}"
 
 

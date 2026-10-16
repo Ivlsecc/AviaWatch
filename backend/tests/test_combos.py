@@ -72,4 +72,4 @@ def test_default_filters_hide_combos_but_flag_shows_them():
 def test_combo_rendering():
     combo = combine([leg("HRG", "IST", 0, 2.5, 8000, "PC1")], [leg("IST", "SVO", 6, 4, 10000, "SU2")])[0]
     line = offer_line(1, combo)
-    assert "🧩 HRG → IST → SVO" in line and "1-й билет</a> 8 000 ₽ + " in line and "⚠️ составной маршрут" in line
+    assert "🧩 HRG → IST → SVO" in line and "1-й билет</a>" in line and "составной маршрут" in line

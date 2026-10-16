@@ -58,15 +58,15 @@ def test_results_text_pagination_and_escaping():
     rec = Recommendation("buy", 30, ["на 14% дешевле обычной цены"], low_confidence=True)
     trend = Trend([(date(2026, 10, 10), 20000), (date(2026, 10, 12), 19000), (date(2026, 10, 15), 18000)])
     text = results_text(REQ, result, stats, page=1, rec=rec, trend=trend)
-    assert "🟢 <b>Стоит покупать</b>" in text and "на 14% дешевле" in text and "оценка приблизительная" in text
-    assert "📉 Цена на ваши даты за 5 дн.: █▅▁ −10%" in text
+    assert "🟢 <b>Стоит покупать</b>" in text and "на 14% дешевле" in text and "данных пока мало" in text
+    assert "📉 за 5 дней █▅▁ −10%" in text
     assert "Хургада / Шарм-эль-Шейх → Москва" in text
-    assert "6. <b>35" in text and "7. <b>36" in text and "1. <b>" not in text
-    assert "Показано 6–7 из 7" in text
+    assert "<b>6. 35" in text and "<b>7. 36" in text and "<b>1. " not in text
+    assert "6–7 из 7" in text
     assert "1 пересадка (SAW)" in text and "6 ч 45 мин" in text
     assert "&amp;b=&lt;1&gt;" in text  # ссылка экранирована
-    assert "История за прошлые дни ещё копится" in text
-    assert "на 2 пасс." in text
+    assert "история ещё копится" in text
+    assert "на 2: ≈" in text
 
 
 def test_results_markup_navigation():
